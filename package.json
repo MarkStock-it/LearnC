@@ -1,0 +1,19 @@
+{
+  "name": "c-practice-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Exam-style C programming practice platform: AI problem generation, sandboxed execution and automatic grading",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "db:rollback": "npm --prefix backend run db:rollback",
+    "db:seed": "npm --prefix backend run db:seed",
+    "api": "npm --prefix backend run dev",
+    "worker": "npm --prefix backend run worker",
+    "web": "npm --prefix frontend run dev",
+    "test": "npm --prefix backend test",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "build:all": "npm --prefix backend run build && npm --prefix frontend run build",
+    "sandbox:build": "docker build -t c-practice-runner:latest executor"
+  }
+}

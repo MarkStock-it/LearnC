@@ -1,0 +1,555 @@
+/* Hallmark · macrostructure: Workbench (practice) / Ledger (dashboard)
+ * tone: austere premium · anchor hue: 250 (deep system blue)
+ * nav: N1a (two destinations, so the minimal archetype is the right one) · no footer (app surface)
+ * contrast: pass (40–41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · icons: pass (30)
+ * Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V4
+ */
+
+@layer base {
+  html {
+    /* clip, not hidden: preserves position: sticky on the toolbar (gate 34). */
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    /* A transparent track reads as an overlay scrollbar (the macOS look) and the thumb
+     * is a palette step rather than a grey rectangle. Declared explicitly because
+     * `color-scheme` alone does not restyle the scrollbars in every embedding. */
+    scrollbar-color: var(--color-hairline) transparent;
+  }
+
+  body {
+    overflow-x: clip;
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: var(--weight-body);
+    line-height: var(--leading-body);
+    letter-spacing: var(--tracking-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-quiet);
+    color: var(--color-ink);
+  }
+
+  /* Focus rings appear instantly — never animated (keyboard users need them at 0ms). */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: var(--weight-display);
+    line-height: var(--leading-title);
+    letter-spacing: var(--tracking-title);
+    font-style: normal; /* headers are always roman */
+    text-wrap: balance;
+    /* A long hyphenated word still has to break rather than push the viewport
+     * wider (gate 51). */
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  /* Prose avoids leaving one orphaned word on its own line. */
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Numbers in columns line up. */
+  table,
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* — Type utilities ----------------------------------------------------- */
+  .type-display {
+    font-size: var(--text-lg);
+    line-height: var(--leading-display);
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--weight-display);
+  }
+
+  .type-title {
+    font-size: var(--text-md);
+    line-height: var(--leading-title);
+    letter-spacing: var(--tracking-title);
+    font-weight: var(--weight-strong);
+  }
+
+  .type-lede {
+    font-size: var(--text-small);
+    color: var(--color-muted);
+  }
+
+  .type-small {
+    font-size: var(--text-small);
+  }
+
+  .type-micro {
+    font-size: var(--text-micro);
+    color: var(--color-faint);
+  }
+
+  /* Mono is the outlier register: wordmark and code, nothing else. */
+  .wordmark {
+    font-family: var(--font-mono);
+    font-weight: var(--weight-strong);
+    letter-spacing: var(--tracking-mono);
+    font-size: var(--text-small);
+    color: var(--color-ink);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-mono);
+  }
+
+  .measure {
+    max-width: var(--measure);
+  }
+
+  /* — Surfaces (one containment layer: never card-in-card) --------------- */
+  .surface {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-surface);
+  }
+
+  .sheet {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-sheet);
+  }
+
+  .well {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-control);
+  }
+
+  .raised {
+    box-shadow: var(--shadow-raised);
+  }
+
+  /* Hairline separator. The page's primary structural device instead of borders
+   * on every box. */
+  .rule {
+    border-block-start: 1px solid var(--color-rule);
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding-block-end: var(--space-sm);
+    border-block-end: 1px solid var(--color-rule);
+  }
+
+  /* — Controls ----------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2xs);
+    /* 44px: the touch-target floor, and the same base height as .field so a
+     * control row never mixes two heights (gate 39). */
+    min-height: 2.75rem;
+    padding-inline: var(--space-md);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-control);
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    line-height: 1; /* intrinsic-height items must not inherit 1.55 in a mixed row (gate 36) */
+    white-space: nowrap; /* a clickable label never wraps (gate 49) */
+    transition:
+      background-color var(--dur-micro) var(--ease-out),
+      border-color var(--dur-micro) var(--ease-out),
+      transform var(--dur-micro) var(--ease-out),
+      color var(--dur-micro) var(--ease-out);
+  }
+
+  /* Feedback lands on the press, not the release (Apple: response). */
+  .btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+    background-color: var(--color-surface-2);
+  }
+
+  .btn:disabled {
+    color: var(--color-faint);
+    border-color: var(--color-rule);
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    border-color: transparent;
+    background-color: var(--color-accent);
+    color: var(--color-accent-ink);
+    font-weight: var(--weight-strong);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    background-color: var(--color-accent-hover);
+  }
+
+  .btn-quiet {
+    border-color: transparent;
+    background-color: transparent;
+    color: var(--color-muted);
+  }
+
+  .field {
+    /* Matches .btn exactly: 38px input beside a 44px button is the classic
+     * form-tuning miss (gate 39). */
+    min-height: 2.75rem;
+    padding-inline: var(--space-sm);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-control);
+    background-color: var(--color-surface-2);
+    color: var(--color-ink);
+    font-size: var(--text-small);
+    line-height: 1;
+    transition:
+      border-color var(--dur-micro) var(--ease-out),
+      background-color var(--dur-micro) var(--ease-out);
+  }
+
+  .field::placeholder {
+    color: var(--color-faint);
+  }
+
+  .link {
+    color: var(--color-ink);
+    text-decoration-line: underline;
+    text-decoration-color: var(--color-rule);
+    text-underline-offset: 0.2em;
+    transition:
+      color var(--dur-micro) var(--ease-out),
+      text-decoration-color var(--dur-micro) var(--ease-out);
+  }
+
+  /* A clickable list row (problem sets, problems, test-case disclosures). */
+  .row-hover {
+    transition: background-color var(--dur-micro) var(--ease-out);
+  }
+
+  .row-title {
+    transition: color var(--dur-micro) var(--ease-out);
+  }
+
+  /* — Hover, gated ------------------------------------------------------- *
+   * Touch devices synthesise :hover on tap, so an ungated hover rule leaves a row
+   * stuck in its hover state once the finger lifts, and fires effects the user never
+   * asked for. Every hover in the app lives inside this query. The :active rules above
+   * stay ungated on purpose — that is the touch feedback. */
+  @media (hover: hover) and (pointer: fine) {
+    /* Hover carries surface, not displacement — one effect, not a stack (gate 13).
+     * The lift belongs to the press, which is where the finger already is. */
+    .btn:hover:not(:disabled) {
+      background-color: var(--color-surface-2);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--color-accent-hover);
+    }
+
+    .btn-quiet:hover:not(:disabled) {
+      background-color: var(--color-surface-2);
+      color: var(--color-ink);
+    }
+
+    .field:hover {
+      border-color: var(--color-muted);
+    }
+
+    .link:hover {
+      color: var(--color-accent);
+      text-decoration-color: var(--color-accent);
+    }
+
+    .row-hover:hover {
+      background-color: var(--color-surface-2);
+    }
+
+    .row-hover:hover .row-title {
+      color: var(--color-accent);
+    }
+
+    .data-table tbody tr:hover {
+      background-color: var(--color-surface-2);
+    }
+  }
+
+  /* — Tags (micro radius; pills are reserved) --------------------------- */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--space-2xs);
+    border-radius: var(--radius-micro);
+    background-color: var(--color-surface-2);
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-micro);
+    white-space: nowrap;
+  }
+
+  /* — Verdict colour (always paired with StatusMark + a word) ----------- */
+  .verdict-pass {
+    color: var(--color-pass);
+  }
+
+  .verdict-warn {
+    color: var(--color-warn);
+  }
+
+  .verdict-fail {
+    color: var(--color-fail);
+  }
+
+  /* — Data table -------------------------------------------------------- */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-small);
+  }
+
+  .data-table th {
+    padding: var(--space-2xs) var(--space-sm);
+    color: var(--color-faint);
+    font-weight: var(--weight-medium);
+    text-align: start;
+    border-block-end: 1px solid var(--color-rule);
+  }
+
+  .data-table td {
+    padding: var(--space-sm);
+    border-block-end: 1px solid var(--color-rule);
+    vertical-align: baseline;
+  }
+
+  .data-table tbody tr:last-child td {
+    border-block-end: 0;
+  }
+
+  .data-table tbody tr {
+    transition: background-color var(--dur-micro) var(--ease-out);
+  }
+
+  /* — Statement prose ---------------------------------------------------- */
+  .prose {
+    max-width: var(--measure);
+    color: var(--color-ink-soft);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  .prose h2 {
+    margin-block: var(--space-lg) var(--space-xs);
+    color: var(--color-ink);
+    font-size: var(--text-body);
+    font-weight: var(--weight-strong);
+  }
+
+  .prose h3 {
+    margin-block: var(--space-md) var(--space-2xs);
+    color: var(--color-ink);
+    font-size: var(--text-small);
+    font-weight: var(--weight-strong);
+  }
+
+  .prose p {
+    margin-block: var(--space-xs);
+  }
+
+  .prose ul,
+  .prose ol {
+    margin-block: var(--space-xs);
+    padding-inline-start: var(--space-lg);
+  }
+
+  .prose ul {
+    list-style: disc;
+  }
+
+  .prose ol {
+    list-style: decimal;
+  }
+
+  .prose li {
+    margin-block: var(--space-3xs);
+  }
+
+  .prose strong {
+    color: var(--color-ink);
+    font-weight: var(--weight-strong);
+  }
+
+  .prose code {
+    padding-inline: var(--space-3xs);
+    border-radius: var(--radius-micro);
+    background-color: var(--color-surface-2);
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  /* Code blocks get a typographic frame (top rule + label + bottom rule) —
+   * no fake window chrome, no traffic-light dots (gate 47). */
+  .prose pre {
+    margin-block: var(--space-sm);
+    padding-block: var(--space-sm);
+    border-block: 1px solid var(--color-rule);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    line-height: 1.5;
+  }
+
+  .prose pre code {
+    padding: 0;
+    background: none;
+  }
+
+  /* — One orchestrated entrance per page, staggered by DOM index -------- *
+   * `backwards`, not `forwards`: the hidden state lives only in the keyframes, so the
+   * element's own resting style is the visible one. With `forwards` the rule has to carry
+   * `opacity: 0` itself (otherwise there is nothing to fade from), and then the page's
+   * entire content is visible only for as long as an animation keeps running — disable
+   * animations for any reason and the app renders blank. Backwards fill still hides the
+   * element through its pre-delay, which is what the stagger needs, but it can never
+   * strand content in the invisible state.
+   * 55ms apart — long stagger delays make an interface feel slow. */
+  .reveal {
+    animation: reveal var(--dur-long) var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
+
+  /* The verdict panel deliberately has NO entrance animation.
+   *
+   * It is the thing the student just waited for, so it should be readable on the frame it
+   * arrives rather than fading in under a cursor already moving toward it. It also keeps
+   * the app's most important content off the critical path of a time-based effect: any
+   * entrance that starts from opacity 0 can be left invisible if the animation never runs
+   * (a stalled document timeline, an aggressive reduced-motion policy, a stripped
+   * stylesheet). Content that must be read does not get to depend on that.
+   *
+   * The score bar was held to the same rule — see .ratio-fill. */
+
+  /* — Score bar: motion that carries information, not decoration --------- */
+  .ratio {
+    block-size: 4px;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-surface-2);
+    overflow: hidden;
+  }
+
+  .ratio-fill {
+    display: block;
+    block-size: 100%;
+    border-radius: inherit;
+    background-color: var(--color-pass);
+    /* scaleX rather than width: transform is GPU-composited and never triggers layout. */
+    transform: scaleX(var(--ratio, 1));
+    transform-origin: left center;
+    /* No draw-in animation. The fill's length *is* the data: animating it from zero means
+     * a stalled animation shows an empty bar next to a "7/7", which states something
+     * false. Decorative motion is welcome in this interface; misleading motion is not. */
+  }
+
+  .ratio-fill[data-outcome='partial'] {
+    background-color: var(--color-warn);
+  }
+
+  .ratio-fill[data-outcome='none'] {
+    background-color: var(--color-fail);
+  }
+
+
+
+  /* — Translucent toolbar: content scrolls beneath, no hard divider ------ */
+  .toolbar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--z-sticky);
+    background-color: var(--material-toolbar);
+    backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+    box-shadow: var(--shadow-whisper);
+  }
+
+  /* Scroll edge effect: the material fades where content meets it. */
+  .toolbar::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: -1px;
+    height: 1px;
+    background: linear-gradient(to bottom, var(--color-rule), transparent);
+  }
+
+  /* — Disclosure that animates grid-rows, never height ------------------ */
+  .disclose-row {
+    display: grid;
+    grid-template-rows: 0fr;
+    /* Closing is faster than opening — a release should not replay the entrance. */
+    transition: grid-template-rows var(--dur-exit) var(--ease-in-out);
+  }
+
+  .disclose-row[data-open='true'] {
+    grid-template-rows: 1fr;
+    transition-duration: var(--dur-short);
+  }
+
+  .disclose-row > * {
+    overflow: hidden;
+  }
+}
+
+/* Entrances declare their *hidden* frame and let the element's own style be the visible
+ * one. Every animation here is additive decoration on top of correct resting styles. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Reduced motion: everything time-based collapses to an instant appearance.
+ *
+ * Durations go to ~zero rather than to a small non-zero value. An element with no
+ * transition declared still carries the initial `transition-property: all`, so any
+ * non-zero global duration would hand every element in the app a live `all` transition
+ * — animating layout properties on hover and state change. At 0.01ms the rule is inert
+ * where nothing is declared, and turns every real transition into an appearance.
+ *
+ * Nothing is re-declared here. Every animation in this file keeps its hidden frame in
+ * the keyframes and leaves the element's own style visible, so these durations are all
+ * that is needed to honour the preference: there is no parallel copy of the motion rules
+ * to drift out of sync. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* No `.reveal` override is needed: the universal 0.01ms duration above already turns
+   * the entrance into an instant appearance and the 0ms delay drops the stagger, so
+   * reduced motion falls out of the same rules instead of a parallel copy of them. */
+
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
+}

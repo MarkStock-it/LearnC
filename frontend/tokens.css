@@ -1,0 +1,213 @@
+/* Hallmark · macrostructure: Workbench (practice) / Ledger (dashboard)
+ * tone: austere premium · anchor hue: 250 (deep system blue)
+ * theme: custom · vibe: "quiet material, Apple restraint" · paper: oklch(97.4% 0.005 250) · accent: oklch(52% 0.132 250)
+ * display: Geist Variable · body: Geist Variable · axes: light / grotesque-roman / cool-blue
+ * studied: no · context: inferred · slop: pass (1–58)
+ * Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V4
+ *
+ * Portable: this file is the system. Every colour, font, space, radius, shadow and
+ * duration in the app is declared here; components reference tokens by name and never
+ * inline a raw OKLCH/hex value. Copy this file into another project to carry the identity.
+ *
+ * Hard rules this file encodes (hallmark/references/color.md):
+ *   one accent, ≤3% of any viewport · no pure #000/#fff · greys tinted toward the
+ *   anchor hue (250) · elevation is lightness, not shadow · dark mode keeps the hue.
+ */
+
+:root {
+  /* Tells the browser which way to render everything it owns itself — scrollbars,
+   * the caret, native form-control chrome, the default canvas. Without this the app
+   * paints a dark palette while the browser still thinks it is light, and the code
+   * editor gets a light scrollbar on a dark surface. */
+  color-scheme: light;
+
+  /* — Surfaces ------------------------------------------------------------ */
+  --color-paper: oklch(97.4% 0.005 250); /* canvas */
+  --color-surface: oklch(99.3% 0.005 250); /* raised: cards, panels, toolbar */
+  --color-surface-2: oklch(95.6% 0.006 250); /* recessed: code wells, inputs */
+  --color-rule: oklch(89% 0.008 250); /* hairline separators */
+  --color-hairline: oklch(84% 0.009 250); /* edges of interactive surfaces */
+
+  /* — Text --------------------------------------------------------------- */
+  --color-ink: oklch(21% 0.014 258); /* primary */
+  --color-ink-soft: oklch(32% 0.012 258); /* body copy */
+  --color-muted: oklch(48% 0.014 255); /* secondary */
+  --color-faint: oklch(60% 0.012 255); /* tertiary, captions */
+
+  /* — Accent (≤3% of any view) ------------------------------------------- */
+  --color-accent: oklch(52% 0.132 250);
+  --color-accent-hover: oklch(45.5% 0.132 250);
+  --color-accent-ink: oklch(99.2% 0.005 250); /* text on accent */
+  --color-accent-quiet: oklch(95.4% 0.022 250); /* selected row wash */
+  --color-focus: oklch(56% 0.155 250); /* focus ring, ≥3:1 on every surface */
+
+  /* — Verdict signals (paired with a mark + label, never colour alone) ---- */
+  --color-pass: oklch(47% 0.095 155);
+  --color-pass-quiet: oklch(95.5% 0.028 155);
+  --color-warn: oklch(54% 0.105 65);
+  --color-warn-quiet: oklch(96% 0.033 80);
+  --color-fail: oklch(50% 0.155 27);
+  --color-fail-quiet: oklch(95.5% 0.028 27);
+
+  /* — Type (2 families: Grotesque + Mono outlier) ------------------------ */
+  --font-display: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --weight-body: 400;
+  --weight-medium: 520;
+  --weight-strong: 600;
+  --weight-display: 700; /* 300 units above body — the required contrast */
+
+  /* Scale: major third (1.25) from a 16px body. Five sizes per page maximum. */
+  --text-micro: 0.75rem; /* 12px — floor. Never smaller. */
+  --text-small: 0.875rem; /* 14px */
+  --text-body: 1rem; /* 16px — body floor */
+  --text-md: 1.25rem; /* 20px */
+  --text-lg: 1.5625rem; /* 25px */
+  --text-xl: 1.9531rem; /* 31.25px */
+  --text-2xl: 2.4414rem; /* 39px */
+
+  /* Tracking is size-specific: tighten as type grows, never a fixed value. */
+  --tracking-display: -0.022em;
+  --tracking-title: -0.014em;
+  --tracking-body: -0.002em;
+  --tracking-mono: -0.01em;
+
+  --leading-display: 1.08;
+  --leading-title: 1.24;
+  --leading-body: 1.55;
+  --measure: 68ch; /* body column, inside the 45–75ch band */
+
+  /* — Syntax (editor only; one source of truth with the UI palette) ----- */
+  --syntax-keyword: oklch(42% 0.128 275);
+  --syntax-string: oklch(44% 0.098 150);
+  --syntax-number: oklch(46% 0.115 45);
+  --syntax-comment: oklch(58% 0.012 255);
+  --syntax-function: oklch(46% 0.115 250);
+  --syntax-type: oklch(45% 0.09 205);
+  --syntax-variable: oklch(30% 0.014 258);
+  --syntax-operator: oklch(50% 0.03 265);
+
+  /* — Space (4pt, nine steps, named by role) ---------------------------- */
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  /* — Radii (varied by hierarchy — one radius on everything is a tell) --- */
+  --radius-micro: 6px; /* tags, marks */
+  --radius-control: 10px; /* buttons, inputs */
+  --radius-surface: 16px; /* cards, panels */
+  --radius-sheet: 22px; /* the largest surface on a page */
+  --radius-pill: 999px; /* only where a pill is genuinely the right shape */
+  /* No derived "inset" radius: at this scale the nest gaps (4 / 12 / 16px) already land
+   * the inner arcs on control / surface values, so a calc() token would be ceremony. */
+
+  /* — Depth (whisper-weight; elevation is mostly lightness) -------------- */
+  --shadow-whisper: 0 1px 2px oklch(20% 0.01 250 / 0.05);
+  --shadow-raised: 0 2px 10px oklch(20% 0.01 250 / 0.06);
+  --shadow-edge: 0 0 0 1px oklch(30% 0.01 250 / 0.06);
+
+  /* — Motion (three easings, three durations; exits are 75% of enters) --- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* On-screen movement only. Deliberately stronger than the CSS keyword: the built-in
+   * curves are too weak to read as intentional. There is no --ease-in — ease-in starts
+   * slow, which is precisely the moment the user is watching, so it is banned for UI. */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --dur-micro: 120ms; /* press feedback — the 100–160ms band */
+  --dur-short: 220ms; /* small state changes */
+  --dur-long: 420ms; /* a whole-surface entrance, the only thing this slow */
+  /* Exits are faster than entrances: leaving should feel like a release, not a replay. */
+  --dur-exit: 165ms;
+
+  /* — Z (six named levels; no freestyle numbers) ------------------------ */
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
+  /* — Material (Apple: translucent chrome, content scrolls beneath) ------ */
+  --material-toolbar: oklch(99.3% 0.005 250 / 0.72);
+  --material-blur: 20px;
+  --material-saturate: 180%;
+}
+
+/* Dark mode keeps the anchor hue; only lightness and chroma move.
+ * Body weight drops 50 units to compensate for the optical weight of light-on-dark.
+ * Elevation still reads as lightness: raised surfaces are lighter than the canvas. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --color-paper: oklch(15.5% 0.006 255);
+    --color-surface: oklch(19% 0.007 255);
+    --color-surface-2: oklch(12.8% 0.006 255);
+    --color-rule: oklch(27.5% 0.008 255);
+    --color-hairline: oklch(33% 0.009 255);
+
+    --color-ink: oklch(94.5% 0.005 255);
+    --color-ink-soft: oklch(86% 0.006 255);
+    --color-muted: oklch(72% 0.009 255);
+    --color-faint: oklch(61% 0.01 255);
+
+    --color-accent: oklch(66% 0.128 252);
+    --color-accent-hover: oklch(72% 0.13 252);
+    --color-accent-ink: oklch(16% 0.01 255);
+    --color-accent-quiet: oklch(27% 0.05 252);
+    --color-focus: oklch(72% 0.15 252);
+
+    --color-pass: oklch(72% 0.11 155);
+    --color-pass-quiet: oklch(26% 0.045 155);
+    --color-warn: oklch(78% 0.11 80);
+    --color-warn-quiet: oklch(27% 0.04 80);
+    --color-fail: oklch(70% 0.15 27);
+    --color-fail-quiet: oklch(27% 0.05 27);
+
+    --weight-body: 350;
+    --weight-medium: 480;
+
+    --syntax-keyword: oklch(80% 0.11 285);
+    --syntax-string: oklch(82% 0.10 155);
+    --syntax-number: oklch(82% 0.10 60);
+    --syntax-comment: oklch(58% 0.012 255);
+    --syntax-function: oklch(80% 0.10 250);
+    --syntax-type: oklch(80% 0.08 205);
+    --syntax-variable: oklch(90% 0.006 255);
+    --syntax-operator: oklch(74% 0.03 265);
+
+    --material-toolbar: oklch(19% 0.007 255 / 0.7);
+  }
+}
+
+/* Reduced transparency: make the material frostier rather than translucent. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material-toolbar: oklch(99.3% 0.005 250);
+    --material-blur: 0px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --material-toolbar: oklch(19% 0.007 255);
+    }
+  }
+}
+
+/* More contrast: near-solid surfaces with a defined edge. */
+@media (prefers-contrast: more) {
+  :root {
+    --color-rule: oklch(72% 0.012 250);
+    --color-hairline: oklch(58% 0.014 250);
+    --color-muted: oklch(38% 0.016 255);
+    --color-faint: oklch(44% 0.014 255);
+    --shadow-edge: 0 0 0 1px oklch(35% 0.02 250 / 0.6);
+  }
+}

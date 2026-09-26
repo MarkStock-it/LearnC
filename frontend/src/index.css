@@ -1,0 +1,8 @@
+/* Entry stylesheet. The Tailwind directives stay first (append-only contract); the
+ * design system follows, in this order:
+ *   tokens.css  — the portable token system (colours, type, space, motion, z)
+ *   styles/app.css — base rules + the component layer that references those tokens
+ * Components never inline a raw colour: every value comes through var(--token). */
+@import 'tailwindcss';
+@import '../tokens.css';
+@import './styles/app.css';

@@ -1,0 +1,115 @@
+# Production-shaped stack (plan §8.1 / §8.3). Local development only needs the two
+# dev servers plus `npm run db:seed` — see README.md.
+#
+# NOTE: the API and worker mount the host Docker socket so the sandbox can spawn
+# sibling executor containers (Docker-outside-of-Docker). That is convenient and
+# acceptable on a dedicated grading host, but it grants host-level access; a real
+# deployment should run the executor on an isolated fleet instead (plan §8.3).
+name: c-practice
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: c_practice
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d c_practice']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Builds the sandbox image that student code runs in. Exits immediately; it exists
+  # so `docker compose up` guarantees the tag is present before the API needs it.
+  sandbox:
+    build: ./executor
+    image: c-practice-runner:latest
+    command: ['/bin/true']
+    restart: 'no'
+
+  migrate:
+    build: ./backend
+    command: ['node', 'dist/scripts/migrate.js']
+    environment: &backend-env
+      NODE_ENV: production
+      DB_CLIENT: pg
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/c_practice
+      QUEUE_DRIVER: bull
+      REDIS_URL: redis://redis:6379
+      EXECUTOR_MODE: docker
+      EXECUTOR_DOCKER_IMAGE: c-practice-runner:latest
+      LOG_LEVEL: info
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
+      AI_PROVIDER: ${AI_PROVIDER:-offline}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot seeding: docker compose run --rm seed --force
+  seed:
+    build: ./backend
+    command: ['node', 'dist/scripts/seed.js']
+    environment: *backend-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      sandbox:
+        condition: service_completed_successfully
+    profiles: ['tools']
+
+  api:
+    build: ./backend
+    command: ['node', 'dist/server.js']
+    environment: *backend-env
+    ports:
+      - '4000:4000'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_completed_successfully
+
+  # Separate worker fleet so grading scales independently of the API (plan §8.1).
+  worker:
+    build: ./backend
+    command: ['node', 'dist/scripts/worker.js']
+    environment: *backend-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    ports:
+      - '8080:80'
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
