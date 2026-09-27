@@ -109,8 +109,8 @@ export const config = {
   },
 
   executor: {
-    /** `auto` prefers Docker and falls back to the host compiler (dev only). */
-    mode: oneOf('EXECUTOR_MODE', ['auto', 'local', 'docker'] as const, 'auto'),
+    /** `auto` prefers Docker, then user-namespace `unshare`, then the host compiler (dev only). */
+    mode: oneOf('EXECUTOR_MODE', ['auto', 'local', 'docker', 'unshare'] as const, 'auto'),
     dockerImage: str('EXECUTOR_DOCKER_IMAGE', 'c-practice-runner:latest'),
     /** Hard wall-clock cap per test case (plan §6.1). */
     timeLimitMs: int('EXECUTOR_TIME_LIMIT_MS', 5000),
@@ -128,9 +128,11 @@ export const config = {
 
   ai: {
     /** `offline` uses the curated problem bank so the platform works without a key. */
-    provider: oneOf('AI_PROVIDER', ['anthropic', 'offline'] as const, 'offline'),
+    provider: oneOf('AI_PROVIDER', ['anthropic', 'offline', 'openai-compat'] as const, 'offline'),
     apiKey: str('ANTHROPIC_API_KEY', ''),
-    model: str('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022'),
+    model: str('AI_MODEL', str('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022')),
+    /** OpenAI-compatible endpoint for `openai-compat` (e.g. a llama.cpp server). */
+    baseUrl: str('AI_BASE_URL', 'http://127.0.0.1:11434/v1'),
     maxAttempts: int('AI_MAX_ATTEMPTS', 3),
   },
 

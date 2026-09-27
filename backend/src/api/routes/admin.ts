@@ -76,7 +76,7 @@ adminRouter.post(
       sampleOutput: bundle.problem.constraints.sample_output,
       difficulty: bundle.problem.difficulty,
       tags: bundle.problem.tags,
-      aiGenerated: bundle.source === 'anthropic',
+      aiGenerated: bundle.source !== 'offline',
       aiPromptParams: {
         provider: bundle.source,
         difficulty: body.difficulty,

@@ -23,7 +23,7 @@ export interface GenerateOptions {
 export interface GeneratedBundle {
   problem: GeneratedProblem;
   testCases: GeneratedTestCase[];
-  source: 'anthropic' | 'offline';
+  source: 'anthropic' | 'offline' | 'openai-compat';
   warnings: string[];
 }
 
@@ -133,7 +133,10 @@ interface AnthropicLike {
 let anthropicClient: AnthropicLike | null = null;
 
 export function isAiConfigured(): boolean {
-  return config.ai.provider === 'anthropic' && config.ai.apiKey.length > 0;
+  return (
+    (config.ai.provider === 'anthropic' && config.ai.apiKey.length > 0) ||
+    config.ai.provider === 'openai-compat'
+  );
 }
 
 async function anthropic(): Promise<AnthropicLike> {
@@ -146,7 +149,43 @@ async function anthropic(): Promise<AnthropicLike> {
   return anthropicClient;
 }
 
+/**
+ * OpenAI-compatible chat completion (used for self-hosted llama.cpp / llama-oid
+ * servers). Only the minimal request/response shape this service needs is typed.
+ */
+async function callOpenAiCompatible(system: string, userMessage: string, maxTokens: number): Promise<string> {
+  const response = await fetch(`${config.ai.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config.ai.apiKey.length > 0 ? { Authorization: `Bearer ${config.ai.apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model: config.ai.model,
+      max_tokens: maxTokens,
+      temperature: 0.7,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userMessage },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`AI endpoint returned ${response.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return (data.choices?.[0]?.message?.content ?? '').trim();
+}
+
 async function callModel(system: string, userMessage: string, maxTokens: number): Promise<string> {
+  if (config.ai.provider === 'openai-compat') {
+    return callOpenAiCompatible(system, userMessage, maxTokens);
+  }
   const client = await anthropic();
   const response = await client.messages.create({
     model: config.ai.model,
@@ -216,7 +255,7 @@ async function generateWithModel(options: GenerateOptions): Promise<GeneratedBun
         warnings.push('No public test case was returned; the first one was promoted to public.');
       }
 
-      return { problem, testCases: parsedCases.test_cases, source: 'anthropic', warnings };
+      return { problem, testCases: parsedCases.test_cases, source: config.ai.provider === 'openai-compat' ? 'openai-compat' : 'anthropic', warnings };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
       logger.warn({ attempt, maxAttempts: config.ai.maxAttempts, err: lastError }, 'AI generation attempt failed');

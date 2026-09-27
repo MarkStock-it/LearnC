@@ -1,0 +1,30 @@
+# LearnC — Apache configuration (shared hosting pattern, mirrors betterclss)
+Options -Indexes
+
+# Static files (built React SPA) are served directly from this docroot.
+# Dynamic backend routes are proxied to the Node service managed by pm2 on
+# localhost:20341 (must always match PORT in ~/learnc-app/backend/.env).
+
+RewriteEngine On
+
+# Backend routes handled by Node: everything under /api/
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^(.*)$ http://127.0.0.1:20341/$1 [P,L,QSA]
+
+# Single-page app: unknown paths fall through to the router.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
+
+# Never expose runtime data or internals (defence in depth: the docroot only
+# ships the built SPA, but keep the same guards as the other deployments).
+RedirectMatch 404 ^/\.env
+RedirectMatch 404 ^/node_modules/
+RedirectMatch 404 ^/\.
+
+# Security headers
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
