@@ -27,16 +27,17 @@ authRouter.post(
     const existing = (await (await import('../../db/knex.js')).db()('users')
       .where({ username: body.username })
       .first()) as { id: number } | undefined;
-    if (existing) {
+    if (existing && (await authRepo.hasPassword(existing.id))) {
       throw ApiError.badRequest('That username is already taken');
     }
 
-    const userId = await authRepo.findOrCreateUserId(body.username);
-    // findOrCreateUserId returns the existing id when the username is taken;
-    // the existence check above already rejected that case.
+    // A passwordless account is a leftover stub from the shared-name flow (or a
+    // half-created registration): registering claims it. Password-protected
+    // accounts are untouchable.
+    const userId = existing ? existing.id : await authRepo.findOrCreateUserId(body.username);
     await authRepo.setPassword(userId, body.password);
     const token = authRepo.issueToken(userId);
-    logger.info({ userId, username: body.username }, 'account registered');
+    logger.info({ userId, username: body.username, claimed: Boolean(existing) }, 'account registered');
     res.status(201).json({ token, user: await repo.findUser(userId) });
   }),
 );
