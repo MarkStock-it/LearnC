@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { sqlTimestamp } from '../db/dialect.js';
 import * as repo from '../db/repositories.js';
 import type { ExecutionLimits } from '../domain/types.js';
 import { logger } from '../utils/logger.js';
@@ -43,7 +44,7 @@ export async function processSubmission(submissionId: number): Promise<void> {
       status: 'COMPLETED',
       totalCount: 0,
       passedCount: 0,
-      completedAt: new Date().toISOString(),
+      completedAt: sqlTimestamp(),
       errorMessage: 'This problem has no test cases yet.',
     });
     logger.warn({ submissionId, problemId: problem.id }, 'problem has no test cases');
@@ -72,7 +73,7 @@ export async function processSubmission(submissionId: number): Promise<void> {
       executor: outcome.executor,
       passedCount: 0,
       totalCount: testCases.length,
-      completedAt: new Date().toISOString(),
+      completedAt: sqlTimestamp(),
     });
     logger.info(
       { submissionId, problemId: problem.id, executor: outcome.executor, durationMs: Date.now() - startedAt },
@@ -101,7 +102,7 @@ export async function processSubmission(submissionId: number): Promise<void> {
     executor: outcome.executor,
     passedCount,
     totalCount: testCases.length,
-    completedAt: new Date().toISOString(),
+    completedAt: sqlTimestamp(),
   });
 
   logger.info(

@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { sqlTimestamp } from '../db/dialect.js';
 import * as repo from '../db/repositories.js';
 import { logger } from '../utils/logger.js';
 import { processSubmission } from '../services/submissionProcessor.js';
@@ -100,7 +101,7 @@ export class InlineSubmissionQueue implements SubmissionQueue {
             .updateSubmission(submissionId, {
               status: 'FAILED',
               errorMessage: message.slice(0, 500),
-              completedAt: new Date().toISOString(),
+              completedAt: sqlTimestamp(),
             })
             .catch((updateError: unknown) => {
               logger.error({ submissionId, err: String(updateError) }, 'could not mark submission as failed');

@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { sqlTimestamp } from '../db/dialect.js';
 import * as repo from '../db/repositories.js';
 import { logger } from '../utils/logger.js';
 import { processSubmission } from '../services/submissionProcessor.js';
@@ -69,7 +70,7 @@ export class BullSubmissionQueue implements SubmissionQueue {
           .updateSubmission(job.data.submissionId, {
             status: 'FAILED',
             errorMessage: (error?.message ?? 'unknown queue error').slice(0, 500),
-            completedAt: new Date().toISOString(),
+            completedAt: sqlTimestamp(),
           })
           .catch((updateError: unknown) => {
             logger.error({ err: String(updateError) }, 'could not mark submission as failed');
