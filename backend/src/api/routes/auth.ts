@@ -30,10 +30,6 @@ authRouter.post(
     if (existing) {
       throw ApiError.badRequest('That username is already taken');
     }
-    if (existing === undefined) {
-      const settings = await authRepo.getSettings(0).catch(() => null); // warm-up noop
-      void settings;
-    }
 
     const userId = await authRepo.findOrCreateUserId(body.username);
     // findOrCreateUserId returns the existing id when the username is taken;
