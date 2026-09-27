@@ -169,6 +169,10 @@ async function callOpenAiCompatible(system: string, userMessage: string, maxToke
         { role: 'user', content: userMessage },
       ],
     }),
+    // A self-hosted llama.cpp server can be busy or wedged by another client's
+    // request; without this the admin endpoint would hang instead of falling
+    // back to the curated bank.
+    signal: AbortSignal.timeout(config.ai.timeoutMs),
   });
 
   if (!response.ok) {

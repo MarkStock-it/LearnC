@@ -9,3 +9,4 @@ data/*.sqlite-journal
 data/*.db
 coverage/
 .DS_Store
+deploy/prod.env

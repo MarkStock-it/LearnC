@@ -139,6 +139,8 @@ export const config = {
     model: str('AI_MODEL', str('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022')),
     /** OpenAI-compatible endpoint for `openai-compat` (e.g. a llama.cpp server). */
     baseUrl: str('AI_BASE_URL', 'http://127.0.0.1:11434/v1'),
+    /** Hard per-call timeout so a hung endpoint falls back to the offline bank. */
+    timeoutMs: int('AI_TIMEOUT_MS', 120_000),
     maxAttempts: int('AI_MAX_ATTEMPTS', 3),
   },
 
