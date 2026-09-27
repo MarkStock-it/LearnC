@@ -1,8 +1,20 @@
 import type { GenerateOptions } from './aiService.js';
 import type { GeneratedProblem } from '../domain/problem.js';
 
-/** System prompt from plan §4.1. */
+/** Short learner-intent block reused by every provider's prompt. */
+export function learnerIntentBlock(options: GenerateOptions): string {
+  const extras: string[] = [];
+  if (options.instructions) extras.push(`LEARNER INSTRUCTIONS (honour exactly): ${options.instructions}`);
+  if (options.avoidTitles && options.avoidTitles.length > 0) {
+    extras.push(`Do not repeat or resemble these existing problems: ${options.avoidTitles.join('; ')}.`);
+  }
+  return extras.length > 0 ? '\n\n' + extras.join('\n') : '';
+}
+
+/** System prompt from plan §4.1, extended with learner intent and avoid-list. */
 export function problemSystemPrompt(options: GenerateOptions): string {
+  const extraBlock = learnerIntentBlock(options);
+
   return `You are an expert C programming instructor designing exam-style coding challenges for second-year Computer Science students at a Philippine university. Your goal is to generate rigorous, well-scoped problems that test fundamental C concepts (arrays, strings, pointers, loops, functions, file I/O).
 
 CONSTRAINTS:
@@ -35,7 +47,7 @@ VALIDATION CHECKLIST:
 - The problem must have one unambiguous solution
 - Specify exactly when a newline is printed and whether integers are space separated
 - Prefer integer arithmetic; if you use floating point, fix the printed precision
-- The reference_solution must compile with -Wall -Wextra -std=c99 and produce the sample output`;
+- The reference_solution must compile with -Wall -Wextra -std=c99 and produce the sample output${extraBlock}`;
 }
 
 /** System prompt from plan §4.2. */
@@ -81,12 +93,18 @@ TEST CASE PRINCIPLES:
 }
 
 export function extractJson(text: string): unknown {
-  const withoutFences = text
-    .replace(/^\s*```(?:json)?/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-  const start = withoutFences.indexOf('{');
-  const end = withoutFences.lastIndexOf('}');
-  const candidate = start >= 0 && end > start ? withoutFences.slice(start, end + 1) : withoutFences;
+  let candidate = text.trim();
+  const fenceStart = candidate.indexOf('\u0060\u0060\u0060');
+  if (fenceStart === 0) {
+    candidate = candidate.slice(candidate.indexOf('\n') + 1);
+  }
+  const fenceEnd = candidate.lastIndexOf('\u0060\u0060\u0060');
+  if (fenceEnd !== -1 && candidate.slice(fenceEnd).trim() === '\u0060\u0060\u0060') {
+    candidate = candidate.slice(0, fenceEnd);
+  }
+  candidate = candidate.trim();
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start >= 0 && end > start) candidate = candidate.slice(start, end + 1);
   return JSON.parse(candidate);
 }

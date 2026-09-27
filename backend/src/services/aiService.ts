@@ -19,6 +19,10 @@ export interface GenerateOptions {
   publicTestCaseCount: number;
   /** Rotation offset so repeated offline generations vary. */
   offset?: number;
+  /** Learner intent, e.g. "focus on nested loops, avoid strings". */
+  instructions?: string;
+  /** Titles to avoid repeating within a quiz. */
+  avoidTitles?: string[];
 }
 
 export interface GeneratedBundle {
@@ -201,31 +205,49 @@ export interface PerUserGenerationResult {
 
 /**
  * Per-user generation chain:
- *   1. the user's own Gemini key (when they saved one / chose gemini),
+ *   1. the user's own Gemini key (when they saved one / chose gemini) — compact
+ *      single-call mode first for token efficiency, two-call escalation on failure,
  *   2. the server's configured provider (openai-compat = the host Ollama/llama.cpp),
  *   3. the curated offline bank — the call never fails outright.
  * Every step reports why it was skipped so the UI can show an honest message.
  */
 export async function generateProblemBundleForUser(
   options: GenerateOptions,
-  userChoice: { aiProvider: 'server' | 'gemini'; geminiKey: string | null },
+  userChoice: { aiProvider: 'server' | 'gemini'; geminiKey: string | null; geminiModel?: string; compact?: boolean },
 ): Promise<PerUserGenerationResult> {
   const warnings: string[] = [];
   let geminiError: string | null = null;
 
   if (userChoice.aiProvider === 'gemini' && userChoice.geminiKey) {
+    const { generateWithGemini, generateWithGeminiCompact } = await import('./geminiService.js');
     try {
-      const { generateWithGemini } = await import('./geminiService.js');
-      const { problem, testCases } = await generateWithGemini(userChoice.geminiKey, options);
+      const { problem, testCases } = userChoice.compact === false
+        ? await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel)
+        : await generateWithGeminiCompact(userChoice.geminiKey, options, userChoice.geminiModel);
       return {
         bundle: { problem, testCases, source: 'gemini', warnings },
         providerUsed: 'gemini',
         geminiError: null,
       };
     } catch (error) {
-      geminiError = error instanceof Error ? error.message : String(error);
-      warnings.push(`Gemini generation failed: ${geminiError}`);
-      logger.warn({ err: geminiError }, 'per-user Gemini generation failed — falling back to the server provider');
+      const firstError = error instanceof Error ? error.message : String(error);
+      logger.warn({ err: firstError }, 'compact Gemini generation failed — retrying with the two-call flow');
+      try {
+        // Escalate once to the higher-quality two-call flow before leaving Gemini.
+        // (Only when compact mode was requested; two-call already failed if not.)
+        if (userChoice.compact === false) throw error;
+        const { problem, testCases } = await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel);
+        warnings.push(`Compact generation failed (${firstError}); used the detailed two-call flow instead.`);
+        return {
+          bundle: { problem, testCases, source: 'gemini', warnings },
+          providerUsed: 'gemini',
+          geminiError: null,
+        };
+      } catch (secondError) {
+        geminiError = secondError instanceof Error ? secondError.message : String(secondError);
+        warnings.push(`Gemini generation failed: ${geminiError}`);
+        logger.warn({ err: geminiError }, 'per-user Gemini generation failed — falling back to the server provider');
+      }
     }
   } else if (userChoice.aiProvider === 'gemini') {
     geminiError = 'A Gemini key was selected but is no longer stored.';

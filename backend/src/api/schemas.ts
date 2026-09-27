@@ -47,7 +47,25 @@ export const generateProblemSchema = z.object({
   publicTestCaseCount: z.coerce.number().int().min(1).max(6).default(3),
   /** Optionally persist the generated problem instead of only returning it. */
   persist: z.boolean().default(true),
+  /** Per-request Gemini model override (e.g. gemini-2.5-flash-lite). */
+  geminiModel: z.string().trim().max(60).optional(),
+  /** Compact generation: one merged call instead of problem + cases. */
+  compact: z.boolean().default(true),
+  /** Practice-quiz customisation (shape of the generated problem). */
+  quiz: z
+    .object({
+      /** Count of practice items to produce (1-5 problems). */
+      problemCount: z.coerce.number().int().min(1).max(5).default(1),
+      /** Free-form learner intent, e.g. "focus on nested loops, avoid strings". */
+      instructions: z.string().trim().max(400).optional(),
+      /** Avoid repeating these problem titles in this quiz. */
+      avoidTitles: z.array(z.string().trim().max(120)).max(20).default([]),
+      /** Put the generated problems in their own quiz set titled this way. */
+      quizTitle: z.string().trim().min(3).max(120).optional(),
+    })
+    .default({ problemCount: 1, avoidTitles: [] }),
 });
 
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 export type GenerateProblemInput = z.infer<typeof generateProblemSchema>;
+export type QuizOptions = NonNullable<GenerateProblemInput['quiz']>;

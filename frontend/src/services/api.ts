@@ -29,14 +29,18 @@ export interface MeResponse {
 }
 
 export interface GenerateResponse {
-  source: string;
-  providerUsed: 'gemini' | 'server' | 'offline';
+  count: number;
+  problems: Array<{
+    problemId: number;
+    title: string;
+    difficulty: Difficulty;
+    verificationPassed: boolean;
+    verificationDetail: string;
+    warnings: string[];
+  }>;
+  problemSetId: number | null;
   geminiError: string | null;
-  warnings: string[];
-  verification: { attempted: boolean; passed: boolean; detail: string; source: string };
-  problemId?: number;
-  problemSetId?: number;
-  problem: { title: string; difficulty: Difficulty; tags: string[] };
+  notes: string[];
 }
 
 export interface ProblemSetSummary {
@@ -324,16 +328,27 @@ export const api = {
     topics: string[];
     testCaseCount?: number;
     publicTestCaseCount?: number;
-    persist?: boolean;
+    problemCount?: number;
+    instructions?: string;
+    quizTitle?: string;
+    geminiModel?: string;
+    compact?: boolean;
   }) =>
     http<GenerateResponse>('/ai/generate-problem', {
       method: 'POST',
       body: JSON.stringify({
         difficulty: params.difficulty,
         topics: params.topics,
-        testCaseCount: params.testCaseCount ?? 6,
+        testCaseCount: params.testCaseCount ?? 5,
         publicTestCaseCount: params.publicTestCaseCount ?? 2,
-        persist: params.persist ?? true,
+        persist: true,
+        geminiModel: params.geminiModel,
+        compact: params.compact ?? true,
+        quiz: {
+          problemCount: params.problemCount ?? 1,
+          instructions: params.instructions,
+          quizTitle: params.quizTitle,
+        },
       }),
     }),
 };
