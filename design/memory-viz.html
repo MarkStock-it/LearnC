@@ -124,17 +124,85 @@ button.ui[aria-expanded="true"] { border-color: var(--blue); color: var(--blue);
 button.ui:disabled { opacity: .45; cursor: default; }
 button.ui:disabled:hover { background: var(--raised); }
 
-/* — the drawer — */
-.drawer { border-top: 1px solid var(--rule); background: var(--raised); }
-.drawer-closed {
-  border-top: 1px solid var(--rule);
-  padding: 26px 20px; color: var(--faint); font-size: 13px;
-  background: var(--raised);
+/* settings: gear button + popover, top right */
+.settings { position: relative; align-self: center; }
+.gear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 8px;
+  border: 1px solid var(--rule); background: var(--raised);
+  cursor: pointer; color: var(--muted);
+  transition: background .12s, color .12s;
+  touch-action: manipulation;
 }
+.gear:hover { background: var(--blue-wash); color: var(--ink-2); }
+.gear:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.gear svg { width: 16px; height: 16px; }
+.popover {
+  position: absolute; right: 0; top: calc(100% + 8px);
+  width: 260px; z-index: 60;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px oklch(20% 0.02 258 / .12);
+  padding: 6px;
+  display: none;
+}
+.popover.open { display: block; }
+.popover h4 {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted);
+  padding: 8px 10px 6px;
+}
+.pref {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 10px; border-radius: 8px;
+  cursor: pointer;
+}
+.pref:hover { background: var(--blue-wash); }
+.pref input { accent-color: var(--blue); margin: 2px 0 0; }
+.pref .label { font-size: 13px; font-weight: 500; color: var(--ink); }
+.pref .desc { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+/* — the memory modal: a popup over the page, not a cramped strip — */
+.overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: oklch(20% 0.02 258 / .45);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px;
+}
+.overlay[hidden] { display: none; }
+.modal {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px oklch(20% 0.02 258 / .28);
+  width: min(1080px, 100%);
+  max-height: min(90vh, 860px);
+  display: flex; flex-direction: column;
+  overflow: clip;
+}
+.modal-body { overflow: auto; }
 .drawer-head {
   display: flex; align-items: baseline; gap: 12px;
-  padding: 14px 24px 0;
+  padding: 14px 20px 12px 24px;
+  border-bottom: 1px solid var(--rule);
+  flex: none;
 }
+.drawer-head .codeloc {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.drawer-head .codeloc b { color: var(--ink); font-weight: 500; }
+.xbtn {
+  font: inherit; font-size: 14px; line-height: 1;
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid var(--rule); background: var(--raised); color: var(--muted);
+  cursor: pointer; align-self: center; flex: none;
+}
+.xbtn:hover { background: var(--paper); color: var(--ink); }
+.xbtn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .drawer-head h2 {
   font-size: 11px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .09em; color: var(--muted);
@@ -263,7 +331,7 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
 .tbtn:disabled:hover { background: var(--raised); }
 .count { font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .count b { color: var(--ink); font-weight: 600; }
-.scrub { flex: 1; accent-color: var(--blue); height: 4px; cursor: pointer; }
+.scrub { flex: 1; min-width: 0; margin-right: 10px; accent-color: var(--blue); height: 4px; cursor: pointer; }
 
 /* legend + scope footer */
 .legend {
@@ -284,6 +352,24 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
   <div class="crumb">PROG 1 — Midterm 2024 / <b>Build a linked list</b> / memory drawer concept</div>
   <div class="grow"></div>
   <div class="hint">step with <span class="kbd">←</span> <span class="kbd">→</span></div>
+  <div class="settings">
+    <button class="gear" id="gearBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Preferences">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+    <div class="popover" id="prefPopover" role="menu" aria-label="Preferences">
+      <h4>Preferences</h4>
+      <label class="pref">
+        <input type="checkbox" id="memoryToggle" checked>
+        <span>
+          <span class="label">Memory visualization</span><br>
+          <span class="desc">Show the Memory button that opens the stack · heap · pointers view</span>
+        </span>
+      </label>
+    </div>
+  </div>
 </header>
 
 <main class="stage">
@@ -298,17 +384,20 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
   <div class="actions">
     <span class="grow"></span>
     <button class="ui" type="button">Run sample <span style="opacity:.55">⌘↵</span></button>
-    <button class="ui" type="button" id="memoryBtn" aria-expanded="true" aria-controls="memoryDrawer">Memory</button>
+    <button class="ui" type="button" id="memoryBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="memoryDrawer">Memory</button>
     <button class="ui primary" type="button">Submit</button>
   </div>
 
-  <!-- ——— the memory drawer ——— -->
-  <section class="drawer" id="memoryDrawer" aria-label="Memory: stack, heap and pointers">
+  <!-- ——— the memory modal ——— -->
+  <div class="overlay" id="memoryOverlay" hidden>
+  <section class="modal" id="memoryDrawer" role="dialog" aria-modal="true" aria-label="Memory: stack, heap and pointers">
     <div class="drawer-head">
       <h2>Memory</h2>
+      <span class="codeloc" id="codeloc"></span>
       <span class="grow"></span>
-      <span class="flag">?memory=1</span>
+      <button class="xbtn" id="closeModalBtn" type="button" aria-label="Close memory view">✕</button>
     </div>
+    <div class="modal-body">
 
     <div class="mem" id="mem">
       <div class="region stack">
@@ -353,10 +442,8 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
       <span><span class="sw" style="border-color:#2e7d4f"></span>heap → heap</span>
       <span><span class="sw" style="border-color:#9c6f1d"></span>stack → stack</span>
     </div>
+    </div>
   </section>
-
-  <div class="drawer-closed" id="drawerClosed" hidden>
-    Memory drawer closed — press <b>Memory</b> to reopen.
   </div>
 </main>
 
@@ -560,6 +647,7 @@ function render() {
 
   showLine(st.line);
   $('stepnote').innerHTML = `<b>step ${cur + 1} of ${steps.length}</b> — main.c:${st.line} · ${esc(st.note)}`;
+  $('codeloc').innerHTML = `main.c:${st.line} — <b>${esc(SRC[st.line - 1].trim())}</b>`;
   $('count').innerHTML = `step <b>${cur + 1}</b> / ${steps.length}`;
   $('scrub').value = cur; $('scrub').max = steps.length - 1;
   $('prevBtn').disabled = cur === 0;
@@ -585,6 +673,7 @@ function collectPointers(st, out) {
   return out;
 }
 function drawArrows(st) {
+  if ($('memoryOverlay').hidden) return;
   const svg = $('arrowSvg'), layer = $('arrowLayer');
   layer.innerHTML = '';
   const mem = $('mem');
@@ -715,20 +804,48 @@ playBtn.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.target.matches('input')) return;
+  if (e.target instanceof Element && e.target.matches('input')) return;
   if (e.key === 'ArrowRight') { e.preventDefault(); stopPlay(); go(cur + 1); }
   if (e.key === 'ArrowLeft')  { e.preventDefault(); stopPlay(); go(cur - 1); }
   if (e.key === 'Escape') setDrawer(false);
 });
 
-/* — drawer open/close — */
+/* — modal open/close — */
+const overlay = $('memoryOverlay');
 function setDrawer(open) {
-  $('memoryDrawer').hidden = !open;
-  $('drawerClosed').hidden = open;
+  overlay.hidden = !open;
   $('memoryBtn').setAttribute('aria-expanded', String(open));
-  if (open) { render(); }
+  if (open) { render(); $('closeModalBtn').focus(); }
+  else { $('memoryBtn').focus(); }
 }
-$('memoryBtn').addEventListener('click', () => setDrawer($('memoryDrawer').hidden));
+$('memoryBtn').addEventListener('click', () => setDrawer(true));
+$('closeModalBtn').addEventListener('click', () => setDrawer(false));
+overlay.addEventListener('click', e => { if (e.target === overlay) setDrawer(false); });
+
+/* — preferences popover — */
+const gearBtn = document.getElementById('gearBtn');
+const popover = document.getElementById('prefPopover');
+const memoryToggle = document.getElementById('memoryToggle');
+function openPopover(open) {
+  popover.classList.toggle('open', open);
+  gearBtn.setAttribute('aria-expanded', String(open));
+}
+gearBtn.addEventListener('click', () => openPopover(!popover.classList.contains('open')));
+document.addEventListener('click', e => {
+  if (!gearBtn.contains(e.target) && !popover.contains(e.target)) openPopover(false);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') openPopover(false);
+});
+memoryToggle.addEventListener('change', () => {
+  $('memoryBtn').hidden = !memoryToggle.checked;
+  if (!memoryToggle.checked) setDrawer(false);
+  localStorage.setItem('pref.memory', memoryToggle.checked);
+});
+if (localStorage.getItem('pref.memory') === 'false') {
+  memoryToggle.checked = false;
+  $('memoryBtn').hidden = true;
+}
 
 /* recompute arrow geometry on resize */
 new ResizeObserver(() => drawArrows(steps[cur])).observe($('mem'));
