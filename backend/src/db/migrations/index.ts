@@ -2,6 +2,7 @@ import type { Knex } from 'knex';
 import { db, closeDb } from '../knex.js';
 import { logger } from '../../utils/logger.js';
 import * as init from './001_init.js';
+import * as userSettings from './002_user_settings.js';
 
 /**
  * Minimal migration runner. The plan allows Flyway/Knex migrations; Knex's CLI is
@@ -10,6 +11,7 @@ import * as init from './001_init.js';
  */
 export const MIGRATIONS: Array<{ name: string; up: (knex: Knex) => Promise<void>; down: (knex: Knex) => Promise<void> }> = [
   init,
+  userSettings,
 ];
 
 const TRACKING_TABLE = 'schema_migrations';

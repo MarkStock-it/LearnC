@@ -5,6 +5,9 @@ import { config } from './config.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFoundHandler } from './api/http.js';
 import { currentUser } from './api/middleware/currentUser.js';
+import { resolveUser } from './api/middleware/tokenAuth.js';
+import { authRouter } from './api/routes/auth.js';
+import { aiRouter } from './api/routes/ai.js';
 import { healthRouter } from './api/routes/health.js';
 import { problemSetsRouter } from './api/routes/problemSets.js';
 import { problemsRouter } from './api/routes/problems.js';
@@ -35,10 +38,15 @@ export function createApp(): Express {
   app.use('/api/problem-sets', problemSetsRouter);
   app.use('/api/admin', adminRouter);
 
-  // Identity is only resolved where per-user data is needed.
-  app.use('/api/problems', currentUser(), problemsRouter);
-  app.use('/api/submissions', currentUser(), submissionsRouter);
-  app.use('/api/dashboard', currentUser(), dashboardRouter);
+  // Authentication is open (it resolves identity, it does not guard data).
+  app.use('/api/auth', authRouter);
+
+  // Identity is only resolved where per-user data is needed. resolveUser is the
+  // token-aware superset of the legacy currentUser stub.
+  app.use('/api/problems', resolveUser(), problemsRouter);
+  app.use('/api/submissions', resolveUser(), submissionsRouter);
+  app.use('/api/dashboard', resolveUser(), dashboardRouter);
+  app.use('/api/ai', resolveUser(), aiRouter);
 
   app.use(notFoundHandler());
   app.use(errorHandler());

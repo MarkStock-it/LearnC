@@ -10,6 +10,8 @@ import { DashboardPage } from './pages/DashboardPage';
  */
 const SetPage = lazy(() => import('./pages/SetPage').then((module) => ({ default: module.SetPage })));
 const PracticePage = lazy(() => import('./pages/PracticePage').then((module) => ({ default: module.PracticePage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
+const GeneratePage = lazy(() => import('./pages/GeneratePage').then((module) => ({ default: module.GeneratePage })));
 
 export function App() {
   return (
@@ -29,6 +31,8 @@ export function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/sets/:setId" element={<SetPage />} />
             <Route path="/problems/:problemId" element={<PracticePage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/generate" element={<GeneratePage />} />
             <Route
               path="*"
               element={

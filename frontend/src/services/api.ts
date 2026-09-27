@@ -8,6 +8,36 @@
  */
 
 const USER_STORAGE_KEY = 'c-practice.student';
+const TOKEN_STORAGE_KEY = 'c-practice.token';
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  email: string;
+}
+
+export interface AiSettings {
+  userId: number;
+  hasPassword: boolean;
+  hasGeminiKey: boolean;
+  aiProvider: 'server' | 'gemini';
+}
+
+export interface MeResponse {
+  user: AuthUser;
+  ai: AiSettings;
+}
+
+export interface GenerateResponse {
+  source: string;
+  providerUsed: 'gemini' | 'server' | 'offline';
+  geminiError: string | null;
+  warnings: string[];
+  verification: { attempted: boolean; passed: boolean; detail: string; source: string };
+  problemId?: number;
+  problemSetId?: number;
+  problem: { title: string; difficulty: Difficulty; tags: string[] };
+}
 
 export interface ProblemSetSummary {
   id: number;
@@ -185,13 +215,32 @@ export function setStudentName(name: string): void {
   else window.localStorage.setItem(USER_STORAGE_KEY, trimmed);
 }
 
+export function getToken(): string {
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? '';
+}
+
+export function setToken(token: string): void {
+  if (token.length === 0) window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  else window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+/** True when the stored credential is a real session token (login flow). */
+export function isLoggedIn(): boolean {
+  return getToken().length > 0;
+}
+
+export function signOut(): void {
+  setToken('');
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
   const student = getStudentName();
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      ...(student ? { Authorization: `Bearer ${student}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : student ? { Authorization: `Bearer ${student}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -243,4 +292,48 @@ export const api = {
   },
 
   dashboard: () => http<DashboardResponse>('/dashboard/stats'),
+
+  // --- auth ---
+  register: (username: string, password: string) =>
+    http<{ token: string; user: AuthUser }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  login: (username: string, password: string) =>
+    http<{ token: string; user: AuthUser }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  logout: () => http<void>('/auth/logout', { method: 'POST' }),
+
+  me: () => http<MeResponse>('/auth/me'),
+
+  saveAiSettings: (provider: 'server' | 'gemini', geminiApiKey?: string) =>
+    http<{ ai: AiSettings }>('/auth/ai-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ provider, geminiApiKey }),
+    }),
+
+  clearGeminiKey: () => http<{ ai: AiSettings }>('/auth/ai-settings/gemini-key', { method: 'DELETE' }),
+
+  // --- per-user AI generation ---
+  generateProblem: (params: {
+    difficulty: Difficulty;
+    topics: string[];
+    testCaseCount?: number;
+    publicTestCaseCount?: number;
+    persist?: boolean;
+  }) =>
+    http<GenerateResponse>('/ai/generate-problem', {
+      method: 'POST',
+      body: JSON.stringify({
+        difficulty: params.difficulty,
+        topics: params.topics,
+        testCaseCount: params.testCaseCount ?? 6,
+        publicTestCaseCount: params.publicTestCaseCount ?? 2,
+        persist: params.persist ?? true,
+      }),
+    }),
 };
