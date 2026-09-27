@@ -90,10 +90,16 @@ export const config = {
   logLevel: str('LOG_LEVEL', 'info'),
 
   db: {
-    /** `better-sqlite3` for zero-infra local dev, `pg` for the Postgres target. */
-    client: oneOf('DB_CLIENT', ['better-sqlite3', 'pg'] as const, 'better-sqlite3'),
+    /** `better-sqlite3` for zero-infra local dev, `pg`/`mysql` on managed servers. */
+    client: oneOf('DB_CLIENT', ['better-sqlite3', 'pg', 'mysql'] as const, 'better-sqlite3'),
     sqliteFile: str('DB_FILE', path.join(REPO_ROOT, 'data', 'c-practice.sqlite')),
     databaseUrl: str('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/c_practice'),
+    /** Individual MariaDB/MySQL settings (used when client is `mysql`). */
+    host: str('DB_HOST', '127.0.0.1'),
+    port: int('DB_PORT', 3306),
+    user: str('DB_USER', ''),
+    password: str('DB_PASSWORD', ''),
+    database: str('DB_DATABASE', 'c_practice'),
     poolMin: int('DB_POOL_MIN', 2),
     poolMax: int('DB_POOL_MAX', 10),
   },

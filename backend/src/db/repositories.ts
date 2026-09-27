@@ -15,14 +15,27 @@ import { DEFAULT_CONSTRAINTS, type ProblemConstraints } from '../domain/problem.
  * `select *` where the shape matters.
  */
 
-/** Postgres returns `[{id}]`, SQLite returns `[id]` — normalise both. */
+/**
+ * Dialect-normalised insert. Postgres returns `[{id}]`, SQLite `[id]`, and MySQL2
+ * has no RETURNING at all — it reports the generated id on the insert result.
+ */
 async function insertReturningId(
   conn: Knex,
   table: string,
   row: Record<string, unknown>,
 ): Promise<number> {
-  const result = (await conn(table).insert(row).returning('id')) as Array<number | { id: number }>;
-  const first = result[0];
+  const result = (await conn(table).insert(row)) as
+    | Array<number | { id: number }>
+    | [{ insertId: number }]
+    | number;
+
+  // MySQL2 shape: [OkPacket-ish] with insertId (knex wraps it as [{insertId}]).
+  if (Array.isArray(result) && result.length > 0 && typeof result[0] === 'object' && result[0] !== null && 'insertId' in (result[0] as Record<string, unknown>)) {
+    const id = (result[0] as { insertId: number }).insertId;
+    if (typeof id === 'number' && id > 0) return id;
+  }
+
+  const first = (Array.isArray(result) ? result[0] : result) as number | { id: number } | undefined;
   if (first === undefined) throw new Error(`Insert into ${table} returned no id`);
   return typeof first === 'number' ? first : first.id;
 }
