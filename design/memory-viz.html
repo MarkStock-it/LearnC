@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f4f5f8">
+<title>LearnC — memory drawer concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ————————————————————————————————————————————————
+   LearnC — memory drawer concept
+   Same desk as the workbench: warm paper, one dark
+   instrument, gcc's quiet voice. The memory drawer is
+   the debugger's memory window redrawn as a stage:
+   stack frames nest like lifetimes, heap blocks float
+   in address order, pointer arrows live only in the
+   whitespace between the columns.
+   ———————————————————————————————————————————————— */
+:root {
+  color-scheme: light;
+  --paper: #f4f5f8;
+  --raised: #fcfcfd;
+  --rule: #e3e5ea;
+  --rule-strong: #c9ccd4;
+  --ink: #1d2129;
+  --ink-2: #454b57;
+  --muted: #6d7480;
+  --faint: #9aa0ab;
+  --blue: #2455c9;
+  --blue-wash: #edf2fc;
+  --red: #b3382c;
+  --red-wash: #faeeec;
+  --green: #2e7d4f;
+  --green-wash: #ecf5ef;
+  --amber: #9c6f1d;
+  --code-bg: #212734;
+  --code-line: #2b3342;
+  --code-ink: #dde3ee;
+  --code-dim: #6d788d;
+  --font: 'Geist', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+body {
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 0 28px 44px;
+}
+
+/* — top bar — */
+.top {
+  display: flex; align-items: baseline; gap: 14px;
+  padding: 18px 2px 14px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 22px;
+}
+.top .mark { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.top .mark span { color: var(--blue); }
+.top .crumb { color: var(--muted); font-size: 13px; }
+.top .crumb b { color: var(--ink-2); font-weight: 500; }
+.top .grow { flex: 1; }
+.top .hint { font-size: 12.5px; color: var(--faint); }
+.top .hint .kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
+  padding: 1px 5px; background: var(--raised);
+}
+
+/* — the stage: editor on top, drawer beneath — */
+.stage {
+  max-width: 1180px; margin: 0 auto;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--raised); overflow: clip;
+}
+
+/* compact editor — the same dark instrument, clipped for the concept */
+.editor {
+  background: var(--code-bg);
+  display: grid; grid-template-columns: 52px 1fr;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.62;
+  padding: 12px 0;
+}
+.gutter { text-align: right; color: var(--code-dim); user-select: none; border-right: 1px solid var(--code-line); background: oklch(23% 0.02 258); }
+.gutter div { padding-right: 14px; }
+.gutter div.cur { color: #bcd0f5; font-weight: 600; }
+.codebody { padding: 0 20px; color: var(--code-ink); white-space: pre; }
+.line { border-radius: 3px; }
+.line.cur { background: oklch(45% 0.09 258 / .4); box-shadow: inset 2px 0 0 #8ab4ff; }
+.tok-kw { color: #a9b8ff; }
+.tok-typ { color: #7fd0c9; }
+.tok-num { color: #f0bd7d; }
+.tok-fn  { color: #c7a7f5; }
+.tok-cm  { color: #66728a; font-style: italic; }
+
+/* — action rail with the Memory toggle — */
+.actions {
+  display: flex; align-items: center; gap: 10px;
+  border-top: 1px solid var(--rule);
+  padding: 11px 20px;
+  background: var(--raised);
+}
+.actions .note { font-size: 12.5px; color: var(--muted); }
+.actions .grow { flex: 1; }
+button.ui {
+  font: inherit; font-size: 13px; font-weight: 600;
+  border-radius: 8px; padding: 7px 16px; cursor: pointer;
+  border: 1px solid var(--rule-strong); background: var(--raised); color: var(--ink);
+  transition: background .12s, border-color .12s;
+  touch-action: manipulation;
+}
+button.ui:hover { background: var(--paper); }
+button.ui:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+button.ui.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+button.ui.primary:hover { background: #1e49b4; }
+button.ui[aria-expanded="true"] { border-color: var(--blue); color: var(--blue); background: var(--blue-wash); }
+button.ui:disabled { opacity: .45; cursor: default; }
+button.ui:disabled:hover { background: var(--raised); }
+
+/* — the drawer — */
+.drawer { border-top: 1px solid var(--rule); background: var(--raised); }
+.drawer-closed {
+  border-top: 1px solid var(--rule);
+  padding: 26px 20px; color: var(--faint); font-size: 13px;
+  background: var(--raised);
+}
+.drawer-head {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 14px 24px 0;
+}
+.drawer-head h2 {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted);
+}
+.drawer-head .sub { font-size: 12px; color: var(--faint); }
+.drawer-head .grow { flex: 1; }
+.drawer-head .flag {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  border: 1px solid var(--rule); border-radius: 999px; padding: 1px 9px;
+}
+
+/* two regions + arrow whitespace. The 150px middle gutter and the
+   100px right margin belong to the arrows — no panel ever crosses them. */
+.mem {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr) 100px;
+  padding: 12px 6px 18px 24px;
+}
+.region { min-width: 0; }
+.region.stack { padding-right: 24px; }
+.region.heap { padding-left: 24px; }
+.region > h3 {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--faint);
+  margin: 6px 0 10px;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.region > h3 small { font-weight: 400; letter-spacing: .02em; text-transform: none; color: var(--faint); font-size: 11px; }
+svg.arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* — stack: nested frames — */
+.frame {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 9px 12px 10px;
+}
+.frame + .frame { margin-top: 8px; }
+.frame .kids { margin-top: 9px; margin-left: 14px; }
+.frame.cur { border-left-color: var(--blue); background: var(--raised); }
+.fhead {
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: var(--mono); font-size: 12.5px;
+  margin-bottom: 4px;
+}
+.fhead .fname { font-weight: 600; color: var(--ink); }
+.frame.cur .fhead .fname { color: var(--blue); }
+.fhead .fargs { color: var(--muted); }
+.fhead .fnum { margin-left: auto; color: var(--faint); font-size: 11px; }
+.vrow {
+  display: grid; grid-template-columns: 74px 1fr auto;
+  gap: 10px; align-items: baseline;
+  font-family: var(--mono); font-size: 12.5px;
+  padding: 2.5px 6px 2.5px 8px;
+  border-radius: 5px;
+}
+.vrow[data-row] { cursor: default; }
+.vrow[data-row]:hover, .vrow[data-row]:focus-visible { background: var(--blue-wash); outline: none; }
+.vtype { color: var(--faint); font-size: 11px; }
+.vname { color: var(--ink-2); }
+.vval { font-variant-numeric: tabular-nums; color: var(--ink); }
+.vrow.ptr .vval { color: var(--blue); font-weight: 500; }
+.vval.nil { color: var(--faint); font-weight: 400; }
+.vval.uninit { color: var(--faint); font-style: italic; }
+
+/* — heap: blocks in address order — */
+.block {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--raised);
+  padding: 9px 12px 10px;
+  max-width: 340px;
+}
+.block + .block { margin-top: 10px; }
+.block.leaked { border-style: dashed; border-color: var(--rule-strong); background: var(--paper); }
+.bhead { display: flex; align-items: baseline; gap: 9px; font-family: var(--mono); font-size: 12.5px; margin-bottom: 4px; }
+.bhead .addr { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bhead .btype { color: var(--muted); font-size: 11px; }
+.bhead .leak-tag {
+  margin-left: auto; font-family: var(--font); font-size: 10px; font-weight: 600;
+  color: var(--amber); background: #faf3e3;
+  border: 1px dashed #dcc48f; border-radius: 999px; padding: 0 8px;
+}
+
+/* enter / flash animations (lifecycles §4) */
+@keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+.enter { animation: rise .22s ease-out; }
+@keyframes flashbg {
+  0% { background: var(--blue-wash); box-shadow: inset 0 0 0 1px var(--blue); }
+  100% { background: transparent; box-shadow: inset 0 0 0 1px transparent; }
+}
+.vrow.flash { animation: flashbg .7s ease-out; }
+@keyframes drawin { to { stroke-dashoffset: 0; } }
+.arrow, .stub { fill: none; stroke-width: 1.6; transition: opacity .12s; }
+.arrow.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: drawin .3s ease-out forwards; }
+svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.focus .dot:not(.hot) { opacity: .3; }
+.c-blue { stroke: var(--blue); } .c-green { stroke: var(--green); } .c-amber { stroke: var(--amber); }
+.stub { stroke: var(--faint); }
+.dot { fill: none; stroke: var(--faint); stroke-width: 1.4; }
+
+/* — step note + transport — */
+.stepnote {
+  padding: 10px 24px 0;
+  font-size: 13px; color: var(--ink-2);
+  min-height: 34px;
+}
+.stepnote b { color: var(--ink); font-weight: 600; }
+.transport {
+  display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--rule);
+  margin-top: 12px;
+  padding: 11px 24px 13px;
+}
+.tbtn {
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--rule-strong); border-radius: 7px;
+  background: var(--raised); color: var(--ink);
+  padding: 5px 12px; cursor: pointer;
+  touch-action: manipulation;
+}
+.tbtn:hover { background: var(--paper); }
+.tbtn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tbtn:disabled { opacity: .4; cursor: default; }
+.tbtn:disabled:hover { background: var(--raised); }
+.count { font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.count b { color: var(--ink); font-weight: 600; }
+.scrub { flex: 1; accent-color: var(--blue); height: 4px; cursor: pointer; }
+
+/* legend + scope footer */
+.legend {
+  border-top: 1px solid var(--rule);
+  padding: 12px 24px 16px;
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-size: 12px; color: var(--muted);
+  align-items: baseline;
+}
+.legend .sw { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 7px; border-radius: 2px; }
+.legend .scope { flex-basis: 100%; color: var(--faint); border-top: 1px dashed var(--rule); padding-top: 10px; margin-top: 4px; }
+.legend .scope b { color: var(--muted); font-weight: 600; }
+
+.notes {
+  max-width: 1180px; margin: 26px auto 0;
+  color: var(--muted); font-size: 12.5px; line-height: 1.6;
+  border-top: 1px solid var(--rule); padding-top: 14px;
+}
+.notes b { color: var(--ink-2); font-weight: 600; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="mark">Learn<span>C</span></div>
+  <div class="crumb">PROG 1 — Midterm 2024 / <b>Build a linked list</b> / memory drawer concept</div>
+  <div class="grow"></div>
+  <div class="hint">step with <span class="kbd">←</span> <span class="kbd">→</span> · hover a pointer to isolate its arrow · <span class="kbd">Esc</span> closes the drawer</div>
+</header>
+
+<main class="stage">
+
+  <!-- the editor above the drawer — current line follows the step -->
+  <section class="editor" aria-label="Source with current execution line">
+    <div class="gutter" id="gutter" aria-hidden="true"></div>
+    <div class="codebody" id="codebody"></div>
+  </section>
+
+  <!-- action rail: the Memory button opens the drawer, per the design doc -->
+  <div class="actions">
+    <span class="note">Steps are recorded up-front by the tracer — prev is just re-rendering an earlier snapshot.</span>
+    <span class="grow"></span>
+    <button class="ui" type="button">Run sample <span style="opacity:.55">⌘↵</span></button>
+    <button class="ui" type="button" id="memoryBtn" aria-expanded="true" aria-controls="memoryDrawer">Memory</button>
+    <button class="ui primary" type="button">Submit</button>
+  </div>
+
+  <!-- ——— the memory drawer ——— -->
+  <section class="drawer" id="memoryDrawer" aria-label="Memory: stack, heap and pointers">
+    <div class="drawer-head">
+      <h2>Memory</h2>
+      <span class="sub">one snapshot per source line · time travel is free because every step was recorded</span>
+      <span class="grow"></span>
+      <span class="flag">?memory=1</span>
+    </div>
+
+    <div class="mem" id="mem">
+      <div class="region stack">
+        <h3>Stack <small>· frames nested by call depth</small></h3>
+        <div id="stackRoot"></div>
+      </div>
+      <div><!-- the middle gutter belongs to the arrows --></div>
+      <div class="region heap">
+        <h3>Heap <small>· allocations in address order</small></h3>
+        <div id="heapRoot"></div>
+      </div>
+      <div><!-- the right margin belongs to heap→heap arrows --></div>
+      <svg class="arrows" id="arrowSvg" aria-hidden="true">
+        <defs>
+          <marker id="m-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#2455c9"/>
+          </marker>
+          <marker id="m-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#2e7d4f"/>
+          </marker>
+          <marker id="m-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#9c6f1d"/>
+          </marker>
+        </defs>
+        <g id="arrowLayer"></g>
+      </svg>
+    </div>
+
+    <p class="stepnote" id="stepnote" aria-live="polite"></p>
+
+    <div class="transport">
+      <button class="tbtn" id="restartBtn" type="button" title="Restart">⏮ restart</button>
+      <button class="tbtn" id="prevBtn" type="button" title="Previous step (←)">◀ prev</button>
+      <button class="tbtn" id="playBtn" type="button" title="Auto-play">▶ play</button>
+      <button class="tbtn" id="nextBtn" type="button" title="Next step (→)">next ▶</button>
+      <span class="count" id="count"></span>
+      <input class="scrub" id="scrub" type="range" min="0" max="12" value="0" step="1" aria-label="Scrub through recorded steps">
+    </div>
+
+    <div class="legend">
+      <span><span class="sw" style="border-color:#2455c9"></span>stack → heap</span>
+      <span><span class="sw" style="border-color:#2e7d4f"></span>heap → heap (the list links)</span>
+      <span><span class="sw" style="border-color:#9c6f1d"></span>stack → stack (out-params)</span>
+      <span>∅&nbsp; = NULL — the stub arrow stops mid-gutter, pointing at nothing</span>
+      <span>leaked? &nbsp;= no live pointer reaches this block any more</span>
+      <span class="scope"><b>v1 scope, stated honestly:</b> traces main + user functions with scalar/struct locals and malloc'd structs. No function pointers, no void* arithmetic, no array-decay theatrics — those get documented limits in this footer, not silent lies.</span>
+    </div>
+  </section>
+
+  <div class="drawer-closed" id="drawerClosed" hidden>
+    Memory drawer closed — the editor has its full height back. Press <b>Memory</b> to reopen.
+  </div>
+</main>
+
+<p class="notes">
+  <b>What is doing the teaching.</b> Stack frames are <b>nested, not stacked cards</b> — a call stack is nested lifetimes, so depth reads as indentation and recursion takes a visible shape; a returned frame is <b>gone, not greyed</b>, because that is what returning means in C. Heap blocks float in address order with plausible addresses. Pointer arrows live only in the whitespace between the columns, colored by origin, fanned into lanes so two pointers to one block run parallel. The moment to watch: step 13 — <span style="font-family:var(--mono)">head = make_node(9)</span> overwrites the only pointer into the old list, and two blocks quietly acquire their <b>leaked?</b> tags. That is a memory leak, seen rather than told.
+</p>
+
+<script>
+/* ————————————————————————————————————————————————
+   The canned trace: build a 2-node list, then leak it.
+   13 steps, each a full snapshot — prev/next just re-render.
+   ———————————————————————————————————————————————— */
+const SRC = [
+'#include <stdio.h>',
+'#include <stdlib.h>',
+'',
+'typedef struct Node {',
+'    int val;',
+'    struct Node *next;',
+'} Node;',
+'',
+'Node *make_node(int v) {',
+'    Node *n = malloc(sizeof *n);',
+'    n->val = v;',
+'    n->next = NULL;',
+'    return n;',
+'}',
+'',
+'int main(void) {',
+'    Node *head = NULL;',
+'    head = make_node(3);',
+'    head->next = make_node(2);',
+'    head = make_node(9);  /* oops — the old list leaks */',
+'    return 0;',
+'',
+];
+
+const ADDR = { A: '0x7f3a2010', B: '0x7f3a2030', C: '0x7f3a2050' };
+
+/* frame(name, args, vars, kids) · var(id, type, name, ptr, value, target, uninit) */
+const F = (name, args, vars, kids) => ({ name, args, vars, kids: kids || [] });
+const V = (id, type, name, ptr, value, target, uninit) => ({ id, type, name, ptr, value, target: target || null, uninit: !!uninit });
+const BLK = (id, val, next) => ({ id, addr: ADDR[id], type: 'Node', fields: [
+  { id: id + '.val',  type: 'int',     name: 'val',  ptr: false, value: val === null ? '?' : val, uninit: val === null },
+  { id: id + '.next', type: 'Node *',  name: 'next', ptr: true,  value: next === 'null' ? 'null' : next, target: next === 'null' ? null : next },
+]});
+
+const steps = [];
+let S;
+const snap = (note, line, flash) => {
+  const copy = o => JSON.parse(JSON.stringify(o));
+  // number frames depth-first: main is #0
+  let n = 0;
+  const num = fs => fs.forEach(f => { f.num = n++; num(f.kids); });
+  const frames = copy(S.frames), blocks = copy(S.blocks);
+  num(frames);
+  steps.push({ note, line, flash: flash || [], frames, blocks });
+};
+
+/* step 1 */
+S = { frames: [F('main', '(void)', [V('head', 'Node *', 'head', true, 'null')])], blocks: [] };
+snap('Node *head = NULL — head exists but points at nothing. The ∅ stub makes that visible.', 17);
+
+/* step 2 */
+S.frames[0].kids = [F('make_node', '(3)', [V('v', 'int', 'v', false, 3), V('n', 'Node *', 'n', true, null, null, true)])];
+snap('make_node(3) is called — its frame nests inside main. n is not yet initialised: ?', 18);
+
+/* step 3 */
+S.blocks = [BLK('A', null, 'null')];
+const f2 = S.frames[0].kids[0];
+f2.vars[1].value = ADDR.A; f2.vars[1].target = 'A'; f2.vars[1].uninit = false;
+snap('malloc hands back 0x7f3a2010. The block’s fields are garbage — val shows ?, not a fake 0.', 10, ['n']);
+
+/* step 4 */
+S.blocks[0].fields[0].value = 3;
+snap('n->val = v writes through the pointer — the block’s first field is filled.', 11, ['A.val']);
+
+/* step 5 */
+S.blocks[0].fields[1].value = 'null'; S.blocks[0].fields[1].target = null;
+snap('n->next = NULL — a one-node list so far. NULL is a value worth seeing, not hiding.', 12, ['A.next']);
+
+/* step 6 */
+S.frames[0].kids = [];
+const head = S.frames[0].vars[0];
+head.value = ADDR.A; head.target = 'A';
+snap('make_node returns and its frame is gone — not greyed, gone. The return value lands in head.', 13, ['head']);
+
+/* step 7 */
+S.frames[0].kids = [F('make_node', '(2)', [V('v', 'int', 'v', false, 2), V('n', 'Node *', 'n', true, null, null, true)])];
+snap('head->next = make_node(2): the call nests again, one lifetime inside another.', 19);
+
+/* step 8 */
+S.blocks.push(BLK('B', null, 'null'));
+const f7 = S.frames[0].kids[0];
+f7.vars[1].value = ADDR.B; f7.vars[1].target = 'B'; f7.vars[1].uninit = false;
+snap('a second malloc — 0x7f3a2030 sits above the first block, address order preserved.', 10, ['n']);
+
+/* step 9 */
+S.blocks[1].fields[0].value = 2;
+snap('n->val = 2 fills the new node.', 11, ['B.val']);
+
+/* step 10 */
+S.blocks[1].fields[1].value = 'null'; S.blocks[1].fields[1].target = null;
+snap('n->next = NULL — this node will be the tail.', 12, ['B.next']);
+
+/* step 11 */
+S.frames[0].kids = [];
+S.blocks[0].fields[1].value = ADDR.B; S.blocks[0].fields[1].target = 'B';
+snap('the frame pops; head->next is the return value. The green heap→heap arrow is the list itself.', 19, ['A.next']);
+
+/* step 12 */
+S.frames[0].kids = [F('make_node', '(9)', [V('v', 'int', 'v', false, 9), V('n', 'Node *', 'n', true, ADDR.C, 'C')])];
+S.blocks.push(BLK('C', null, 'null'));
+snap('head = make_node(9): a third node is allocated at 0x7f3a2050 — but watch what this line is about to do to head.', 20, ['n']);
+
+/* step 13 */
+S.frames[0].kids = [];
+const h13 = S.frames[0].vars[0];
+h13.value = ADDR.C; h13.target = 'C';
+S.blocks[0].leaked = true; S.blocks[1].leaked = true;
+snap('head is rewired to the new node — and the old two-node list is now unreachable. Dashed borders, leaked? tags: nothing points at them any more.', 20, ['head']);
+
+/* —————————————————— rendering —————————————————— */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* tiny C tokenizer, same voice as the workbench linter */
+const KW = /\b(if|else|for|while|do|return|break|continue|int|long|char|float|double|void|unsigned|signed|const|struct|switch|case|default|sizeof|static|typedef)\b/g;
+function highlight(line) {
+  let out = '', i = 0;
+  const push = (cls, t) => { out += cls ? `<span class="${cls}">${esc(t)}</span>` : esc(t); };
+  while (i < line.length) {
+    const rest = line.slice(i); let m;
+    if ((m = rest.match(/^\/\/.*/)))                    { push('tok-cm', m[0]); i += m[0].length; continue; }
+    if ((m = rest.match(/^\/\*.*?\*\/|^\/\*.*/)))       { push('tok-cm', m[0]); i += m[0].length; continue; }
+    if ((m = rest.match(/^"(?:[^"\\]|\\.)*"/)))         { push('tok-str', m[0]); i += m[0].length; continue; }
+    if ((m = rest.match(/^\d+/)))                       { push('tok-num', m[0]); i += m[0].length; continue; }
+    if ((m = rest.match(/^[A-Za-z_]\w*(?=\s*\()/)))     { push('tok-fn', m[0]); i += m[0].length; continue; }
+    KW.lastIndex = 0;
+    if ((m = KW.exec(rest)) && m.index === 0)           { push('tok-kw', m[0]); i += m[0].length; continue; }
+    if ((m = rest.match(/^[A-Za-z_]\w*/)))              { push('', m[0]); i += m[0].length; continue; }
+    push('', line[i]); i += 1;
+  }
+  return out || '&nbsp;';
+}
+
+/* build the editor once; step highlighting just moves .cur */
+const lineEls = [];
+(function buildEditor() {
+  const g = $('gutter'), c = $('codebody');
+  SRC.forEach((src, i) => {
+    const gd = document.createElement('div'); gd.textContent = i + 1; g.appendChild(gd);
+    const ld = document.createElement('div'); ld.className = 'line'; ld.innerHTML = highlight(src); c.appendChild(ld);
+    lineEls.push({ g: gd, l: ld });
+  });
+})();
+function showLine(ln) {
+  lineEls.forEach((el, i) => {
+    const on = i + 1 === ln;
+    el.g.classList.toggle('cur', on);
+    el.l.classList.toggle('cur', on);
+  });
+}
+
+/* value rendering: addresses in blue, NULL as ∅, uninitialised as ? */
+function valHTML(v) {
+  if (v.uninit) return '<span class="vval uninit">?</span>';
+  if (v.ptr && v.value === 'null') return `<span class="vval nil" data-anchor="${esc(v.id)}">∅ NULL</span>`;
+  if (v.ptr) return `<span class="vval" data-anchor="${esc(v.id)}">${esc(v.value)}</span>`;
+  return `<span class="vval">${esc(v.value)}</span>`;
+}
+function rowHTML(v, flashSet) {
+  const cls = ['vrow']; if (v.ptr) cls.push('ptr');
+  if (flashSet.has(v.id)) cls.push('flash');
+  const tab = v.ptr ? ' tabindex="0" data-row="' + esc(v.id) + '" aria-label="' + esc(v.name) + (v.ptr ? ' pointer' : '') + '"' : '';
+  return `<div class="${cls.join(' ')}"${tab}><span class="vtype">${esc(v.type)}</span><span class="vname">${esc(v.name)}</span>${valHTML(v)}</div>`;
+}
+function frameHTML(f, maxNum, flashSet) {
+  const vars = f.vars.map(v => rowHTML(v, flashSet)).join('');
+  const kids = f.kids.map(k => frameHTML(k, maxNum, flashSet)).join('');
+  return `<div class="frame${f.num === maxNum ? ' cur' : ''}${flashSet.has('frame' + f.num) ? ' enter' : ''}">
+    <div class="fhead"><span class="fname">${esc(f.name)}</span><span class="fargs">${esc(f.args)}</span><span class="fnum">frame #${f.num}</span></div>
+    <div class="fvars">${vars}</div>${f.kids.length ? `<div class="kids">${kids}</div>` : ''}
+  </div>`;
+}
+function blockHTML(b, prev, flashSet) {
+  const fresh = !prev || !prev.blocks.some(p => p.id === b.id);
+  const fields = b.fields.map(v => rowHTML(v, flashSet)).join('');
+  return `<div class="block${b.leaked ? ' leaked' : ''}${fresh ? ' enter' : ''}" data-block="${esc(b.id)}">
+    <div class="bhead"><span class="addr">${esc(b.addr)}</span><span class="btype">${esc(b.type)}</span>${b.leaked ? '<span class="leak-tag">leaked?</span>' : ''}</div>
+    <div class="bfields">${fields}</div>
+  </div>`;
+}
+
+let cur = 0;
+const prevIds = new Set();
+function render() {
+  const st = steps[cur];
+  const prev = cur > 0 ? steps[cur - 1] : null;
+  const flashSet = new Set(st.flash);
+
+  $('stackRoot').innerHTML = st.frames.map(f => frameHTML(f, maxFrameNum(st.frames), flashSet)).join('');
+  $('heapRoot').innerHTML = st.blocks.map(b => blockHTML(b, prev, flashSet)).join('') ||
+    '<p style="font-size:12.5px;color:var(--faint);font-family:var(--mono)">— empty —</p>';
+
+  showLine(st.line);
+  $('stepnote').innerHTML = `<b>step ${cur + 1} of ${steps.length}</b> — main.c:${st.line} · ${esc(st.note)}`;
+  $('count').innerHTML = `step <b>${cur + 1}</b> / ${steps.length}`;
+  $('scrub').value = cur; $('scrub').max = steps.length - 1;
+  $('prevBtn').disabled = cur === 0;
+  $('nextBtn').disabled = cur === steps.length - 1;
+  drawArrows(st);
+}
+function maxFrameNum(frames) {
+  let m = 0;
+  const walk = fs => fs.forEach(f => { m = Math.max(m, f.num); walk(f.kids); });
+  walk(frames); return m;
+}
+
+/* — pointer arrows: computed from the snapshot, laid out in the gutters — */
+function collectPointers(st, out) {
+  const walkFrames = fs => fs.forEach(f => {
+    f.vars.forEach(v => { if (v.ptr) out.push({ id: v.id, target: v.target, origin: 'stack' }); });
+    walkFrames(f.kids);
+  });
+  walkFrames(st.frames);
+  st.blocks.forEach(b => b.fields.forEach(v => {
+    if (v.ptr) out.push({ id: v.id, target: v.target, origin: 'heap' });
+  }));
+  return out;
+}
+function drawArrows(st) {
+  const svg = $('arrowSvg'), layer = $('arrowLayer');
+  layer.innerHTML = '';
+  const mem = $('mem');
+  const box = mem.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+
+  const ptrs = collectPointers(st, []);
+  const live = ptrs.filter(p => p.target);
+  const nils = ptrs.filter(p => !p.target);
+  const heapPtrs = live.filter(p => p.origin === 'heap');
+  const stackPtrs = live.filter(p => p.origin === 'stack');
+
+  // lanes: everything in one gutter fans out 8px apart, sorted by source y
+  const assign = arr => {
+    arr.sort((a, b) => a.y - b.y);
+    arr.forEach((p, i) => { p.lane = i; p.count = arr.length; });
+  };
+
+  // gather anchor geometry for every pointer, live or NULL
+  const geom = p => {
+    const a = mem.querySelector(`[data-anchor="${CSS.escape(p.id)}"]`);
+    if (!a) return null;
+    const r = a.getBoundingClientRect();
+    return { x: r.right - box.left, y: r.top + r.height / 2 - box.top };
+  };
+  ptrs.forEach(p => { const g = geom(p); if (g) Object.assign(p, g); else p.dead = true; });
+
+  // mid-gutter lanes for stack arrows + NULL stubs from the stack
+  const midPtrs = [...stackPtrs, ...nils.filter(p => p.origin === 'stack')].filter(p => !p.dead);
+  assign(midPtrs);
+  // right-margin lanes for heap arrows + NULL stubs from the heap
+  const rightPtrs = [...heapPtrs, ...nils.filter(p => p.origin === 'heap')].filter(p => !p.dead);
+  assign(rightPtrs);
+
+  const memRect = $('mem').parentElement.getBoundingClientRect();
+  // gutter x positions: middle gutter spans between stack and heap regions
+  const stackR = document.querySelector('.region.stack').getBoundingClientRect();
+  const heapR  = document.querySelector('.region.heap').getBoundingClientRect();
+  const midL = stackR.right - box.left + 8, midR = heapR.left - box.left - 8;
+  const rightL = heapR.right - box.left + 10, rightR = box.width - 14;
+  const laneX = (p, l, r) => l + (r - l) * ((p.lane + 1) / (p.count + 1));
+  const prevIdsNow = new Set(prevSnapshotIds);
+
+  const mk = (d, color, id, cls) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('class', `${cls} c-${color} ${prevIdsNow.has(id) ? '' : 'draw'}`);
+    path.setAttribute('pathLength', '1');
+    path.dataset.arrow = id;
+    if (color !== 'stub') path.setAttribute('marker-end', `url(#m-${color})`);
+    layer.appendChild(path);
+    return path;
+  };
+
+  live.filter(p => !p.dead).forEach(p => {
+    const tgt = mem.querySelector(`[data-block="${p.target}"]`);
+    if (!tgt) return;
+    const tr = tgt.getBoundingClientRect();
+    const ty = tr.top + 16 - box.top;
+    const color = p.origin === 'stack' ? 'blue' : 'green';
+    let d;
+    if (p.origin === 'stack') {
+      const lx = laneX(p, midL, midR);
+      d = `M ${p.x} ${p.y} C ${lx} ${p.y}, ${lx} ${ty}, ${tr.left - box.left - 2} ${ty}`;
+    } else {
+      const lx = laneX(p, rightL, rightR);
+      d = `M ${p.x} ${p.y} C ${lx} ${p.y}, ${lx} ${ty}, ${tr.right - box.left + 2} ${ty}`;
+    }
+    mk(d, color, p.id, 'arrow');
+  });
+
+  nils.filter(p => !p.dead).forEach(p => {
+    const l = p.origin === 'stack' ? midL : rightL, r = p.origin === 'stack' ? midR : rightR;
+    const lx = laneX(p, l, r);
+    const endX = p.origin === 'stack' ? lx : Math.min(lx, p.x + (r - p.x) * 0.9);
+    mk(`M ${p.x} ${p.y} L ${endX} ${p.y}`, 'stub', p.id, 'stub');
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', endX); dot.setAttribute('cy', p.y); dot.setAttribute('r', 3.5);
+    dot.setAttribute('class', 'dot'); dot.dataset.arrow = p.id;
+    layer.appendChild(dot);
+  });
+
+  prevSnapshotIds = ptrs.map(p => p.id);
+}
+let prevSnapshotIds = [];
+
+/* hover / keyboard focus on a pointer row isolates its arrow */
+document.addEventListener('mouseover', e => {
+  const row = e.target.closest('[data-row]');
+  focusArrow(row ? row.dataset.row : null);
+});
+document.addEventListener('focusin', e => {
+  const row = e.target.closest('[data-row]');
+  focusArrow(row ? row.dataset.row : null);
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.closest && e.target.closest('[data-row]')) focusArrow(null);
+});
+document.addEventListener('focusout', () => focusArrow(null));
+function focusArrow(id) {
+  const svg = $('arrowSvg');
+  if (!id) { svg.classList.remove('focus'); return; }
+  svg.classList.add('focus');
+  svg.querySelectorAll('[data-arrow]').forEach(el => el.classList.toggle('hot', el.dataset.arrow === id));
+}
+
+/* — transport — */
+function go(i) {
+  cur = Math.max(0, Math.min(steps.length - 1, i));
+  render();
+}
+$('nextBtn').addEventListener('click', () => { stopPlay(); go(cur + 1); });
+$('prevBtn').addEventListener('click', () => { stopPlay(); go(cur - 1); });
+$('restartBtn').addEventListener('click', () => { stopPlay(); go(0); });
+$('scrub').addEventListener('input', e => { stopPlay(); go(+e.target.value); });
+
+let playTimer = null;
+const playBtn = $('playBtn');
+function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; playBtn.textContent = '▶ play'; } }
+playBtn.addEventListener('click', () => {
+  if (playTimer) return stopPlay();
+  if (cur === steps.length - 1) go(0);
+  playBtn.textContent = '⏸ pause';
+  playTimer = setInterval(() => {
+    if (cur === steps.length - 1) return stopPlay();
+    go(cur + 1);
+  }, 500);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input')) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); stopPlay(); go(cur + 1); }
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); stopPlay(); go(cur - 1); }
+  if (e.key === 'Escape') setDrawer(false);
+});
+
+/* — drawer open/close — */
+function setDrawer(open) {
+  $('memoryDrawer').hidden = !open;
+  $('drawerClosed').hidden = open;
+  $('memoryBtn').setAttribute('aria-expanded', String(open));
+  if (open) { render(); }
+}
+$('memoryBtn').addEventListener('click', () => setDrawer($('memoryDrawer').hidden));
+
+/* recompute arrow geometry on resize */
+new ResizeObserver(() => drawArrows(steps[cur])).observe($('mem'));
+
+/* init */
+render();
+</script>
+</body>
+</html>
