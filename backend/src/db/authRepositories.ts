@@ -1,5 +1,8 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { promisify } from 'node:util';
+import { config } from '../config.js';
 import { db } from './knex.js';
 
 const scrypt = promisify(scryptCallback) as (
@@ -135,41 +138,57 @@ export async function findOrCreateUserId(username: string, email?: string): Prom
 }
 
 // ---------------------------------------------------------------------------
-// Opaque session tokens. Kept in-process: a restart logs everyone out, which is
-// acceptable for a study tool and avoids another table + cookie plumbing.
+// Session tokens: self-contained HMAC-signed values. Stateless by design —
+// they survive process restarts and need no session table. Payload is
+// `userId.expiresAt` and the signature is HMAC-SHA256 over it with a server
+// secret (persisted under the data dir so restarts keep tokens valid).
 // ---------------------------------------------------------------------------
 
-interface Session {
-  userId: number;
-  expiresAt: number;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function sessionSecret(): string {
+  const configured = process.env.SESSION_SECRET;
+  if (configured && configured.length >= 32) return configured;
+  const secretPath = path.join(path.dirname(config.db.sqliteFile), 'session-secret');
+  try {
+    const existing = fs.readFileSync(secretPath, 'utf8').trim();
+    if (existing.length >= 32) return existing;
+  } catch {
+    /* first boot */
+  }
+  const generated = randomBytes(32).toString('hex');
+  fs.mkdirSync(path.dirname(secretPath), { recursive: true });
+  fs.writeFileSync(secretPath, generated, { mode: 0o600 });
+  return generated;
 }
 
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const sessions = new Map<string, Session>();
+function sign(payload: string): string {
+  return createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
+}
 
 export function issueToken(userId: number): string {
-  // Opportunistic cleanup so the map cannot grow without bound.
-  const now = Date.now();
-  if (sessions.size > 0 && sessions.size % 50 === 0) {
-    for (const [token, session] of sessions) {
-      if (session.expiresAt < now) sessions.delete(token);
-    }
-  }
-  const token = randomBytes(32).toString('base64url');
-  sessions.set(token, { userId, expiresAt: now + SESSION_TTL_MS });
-  return token;
+  const payload = `${userId}.${Date.now() + SESSION_TTL_MS}`;
+  return `${payload}.${sign(payload)}`;
 }
 
 export function resolveToken(token: string): number | null {
-  const session = sessions.get(token);
-  if (!session) return null;
-  if (session.expiresAt < Date.now()) {
-    sessions.delete(token);
-    return null;
-  }
-  return session.userId;
+  const lastDot = token.lastIndexOf('.');
+  if (lastDot <= 0) return null;
+  const payload = token.slice(0, lastDot);
+  const signature = token.slice(lastDot + 1);
+  const parts = payload.split('.');
+  if (parts.length !== 2) return null;
+  const userId = Number.parseInt(parts[0] ?? '', 10);
+  const expiresAt = Number.parseInt(parts[1] ?? '', 10);
+  if (!Number.isFinite(userId) || !Number.isFinite(expiresAt)) return null;
+  if (expiresAt < Date.now()) return null;
+  const expected = sign(payload);
+  if (expected.length !== signature.length) return null;
+  if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
+  return userId;
 }
 
 export function revokeToken(token: string): void {
-  sessions.delete(token);
+  // Stateless tokens cannot be revoked individually; expiry (30 days) bounds them.
+  void token;
 }
