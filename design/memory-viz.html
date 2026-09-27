@@ -274,15 +274,6 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
   align-items: baseline;
 }
 .legend .sw { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 7px; border-radius: 2px; }
-.legend .scope { flex-basis: 100%; color: var(--faint); border-top: 1px dashed var(--rule); padding-top: 10px; margin-top: 4px; }
-.legend .scope b { color: var(--muted); font-weight: 600; }
-
-.notes {
-  max-width: 1180px; margin: 26px auto 0;
-  color: var(--muted); font-size: 12.5px; line-height: 1.6;
-  border-top: 1px solid var(--rule); padding-top: 14px;
-}
-.notes b { color: var(--ink-2); font-weight: 600; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -292,7 +283,7 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
   <div class="mark">Learn<span>C</span></div>
   <div class="crumb">PROG 1 — Midterm 2024 / <b>Build a linked list</b> / memory drawer concept</div>
   <div class="grow"></div>
-  <div class="hint">step with <span class="kbd">←</span> <span class="kbd">→</span> · hover a pointer to isolate its arrow · <span class="kbd">Esc</span> closes the drawer</div>
+  <div class="hint">step with <span class="kbd">←</span> <span class="kbd">→</span></div>
 </header>
 
 <main class="stage">
@@ -305,7 +296,6 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
 
   <!-- action rail: the Memory button opens the drawer, per the design doc -->
   <div class="actions">
-    <span class="note">Steps are recorded up-front by the tracer — prev is just re-rendering an earlier snapshot.</span>
     <span class="grow"></span>
     <button class="ui" type="button">Run sample <span style="opacity:.55">⌘↵</span></button>
     <button class="ui" type="button" id="memoryBtn" aria-expanded="true" aria-controls="memoryDrawer">Memory</button>
@@ -316,7 +306,6 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
   <section class="drawer" id="memoryDrawer" aria-label="Memory: stack, heap and pointers">
     <div class="drawer-head">
       <h2>Memory</h2>
-      <span class="sub">one snapshot per source line · time travel is free because every step was recorded</span>
       <span class="grow"></span>
       <span class="flag">?memory=1</span>
     </div>
@@ -361,22 +350,15 @@ svg.arrows.focus .arrow:not(.hot), svg.arrows.focus .stub:not(.hot), svg.arrows.
 
     <div class="legend">
       <span><span class="sw" style="border-color:#2455c9"></span>stack → heap</span>
-      <span><span class="sw" style="border-color:#2e7d4f"></span>heap → heap (the list links)</span>
-      <span><span class="sw" style="border-color:#9c6f1d"></span>stack → stack (out-params)</span>
-      <span>∅&nbsp; = NULL — the stub arrow stops mid-gutter, pointing at nothing</span>
-      <span>leaked? &nbsp;= no live pointer reaches this block any more</span>
-      <span class="scope"><b>v1 scope, stated honestly:</b> traces main + user functions with scalar/struct locals and malloc'd structs. No function pointers, no void* arithmetic, no array-decay theatrics — those get documented limits in this footer, not silent lies.</span>
+      <span><span class="sw" style="border-color:#2e7d4f"></span>heap → heap</span>
+      <span><span class="sw" style="border-color:#9c6f1d"></span>stack → stack</span>
     </div>
   </section>
 
   <div class="drawer-closed" id="drawerClosed" hidden>
-    Memory drawer closed — the editor has its full height back. Press <b>Memory</b> to reopen.
+    Memory drawer closed — press <b>Memory</b> to reopen.
   </div>
 </main>
-
-<p class="notes">
-  <b>What is doing the teaching.</b> Stack frames are <b>nested, not stacked cards</b> — a call stack is nested lifetimes, so depth reads as indentation and recursion takes a visible shape; a returned frame is <b>gone, not greyed</b>, because that is what returning means in C. Heap blocks float in address order with plausible addresses. Pointer arrows live only in the whitespace between the columns, colored by origin, fanned into lanes so two pointers to one block run parallel. The moment to watch: step 13 — <span style="font-family:var(--mono)">head = make_node(9)</span> overwrites the only pointer into the old list, and two blocks quietly acquire their <b>leaked?</b> tags. That is a memory leak, seen rather than told.
-</p>
 
 <script>
 /* ————————————————————————————————————————————————
@@ -445,7 +427,7 @@ f2.vars[1].value = ADDR.A; f2.vars[1].target = 'A'; f2.vars[1].uninit = false;
 snap('malloc hands back 0x7f3a2010. The block’s fields are garbage — val shows ?, not a fake 0.', 10, ['n']);
 
 /* step 4 */
-S.blocks[0].fields[0].value = 3;
+S.blocks[0].fields[0].value = 3; S.blocks[0].fields[0].uninit = false;
 snap('n->val = v writes through the pointer — the block’s first field is filled.', 11, ['A.val']);
 
 /* step 5 */
@@ -469,7 +451,7 @@ f7.vars[1].value = ADDR.B; f7.vars[1].target = 'B'; f7.vars[1].uninit = false;
 snap('a second malloc — 0x7f3a2030 sits above the first block, address order preserved.', 10, ['n']);
 
 /* step 9 */
-S.blocks[1].fields[0].value = 2;
+S.blocks[1].fields[0].value = 2; S.blocks[1].fields[0].uninit = false;
 snap('n->val = 2 fills the new node.', 11, ['B.val']);
 
 /* step 10 */
