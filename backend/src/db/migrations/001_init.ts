@@ -7,6 +7,10 @@ import type { Knex } from 'knex';
  * SQLite has neither, so this migration sticks to constructs Knex maps cleanly on
  * both dialects — JSON payloads via `jsonb` (becomes `json` on SQLite) and status
  * columns as `varchar` validated by Zod in the API layer instead of native ENUMs.
+ *
+ * MySQL/MariaDB: every FK integer column is `.unsigned()` — `increments()` creates
+ * an INT UNSIGNED primary key and InnoDB rejects the FK when the sign differs
+ * (errno 150). Sign is meaningless on Postgres/SQLite, so this stays portable.
  */
 export const name = '001_init';
 
@@ -27,7 +31,7 @@ export async function up(knex: Knex): Promise<void> {
     t.integer('exam_year').nullable();
     t.string('exam_semester', 10).nullable();
     t.string('difficulty', 10).notNullable().defaultTo('medium');
-    t.integer('created_by').nullable().references('id').inTable('users').onDelete('SET NULL');
+    t.integer('created_by').unsigned().nullable().references('id').inTable('users').onDelete('SET NULL');
     t.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
     t.index(['exam_year', 'exam_semester'], 'idx_problem_sets_exam');
   });
@@ -35,6 +39,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('problems', (t) => {
     t.increments('id').primary();
     t.integer('problem_set_id')
+      .unsigned()
       .notNullable()
       .references('id')
       .inTable('problem_sets')
@@ -54,7 +59,7 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.schema.createTable('test_cases', (t) => {
     t.increments('id').primary();
-    t.integer('problem_id').notNullable().references('id').inTable('problems').onDelete('CASCADE');
+    t.integer('problem_id').unsigned().notNullable().references('id').inTable('problems').onDelete('CASCADE');
     t.text('input_data').notNullable();
     t.text('expected_output').notNullable();
     t.boolean('is_public').notNullable().defaultTo(false);
@@ -66,8 +71,8 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.schema.createTable('submissions', (t) => {
     t.increments('id').primary();
-    t.integer('user_id').nullable().references('id').inTable('users').onDelete('SET NULL');
-    t.integer('problem_id').notNullable().references('id').inTable('problems').onDelete('CASCADE');
+    t.integer('user_id').unsigned().nullable().references('id').inTable('users').onDelete('SET NULL');
+    t.integer('problem_id').unsigned().notNullable().references('id').inTable('problems').onDelete('CASCADE');
     t.text('code').notNullable();
     t.string('status', 20).notNullable().defaultTo('QUEUED');
     t.text('compilation_error').nullable();
@@ -84,11 +89,12 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('submission_results', (t) => {
     t.increments('id').primary();
     t.integer('submission_id')
+      .unsigned()
       .notNullable()
       .references('id')
       .inTable('submissions')
       .onDelete('CASCADE');
-    t.integer('test_case_id').nullable().references('id').inTable('test_cases').onDelete('SET NULL');
+    t.integer('test_case_id').unsigned().nullable().references('id').inTable('test_cases').onDelete('SET NULL');
     t.boolean('passed').notNullable().defaultTo(false);
     t.text('actual_output').nullable();
     t.text('stderr').nullable();
