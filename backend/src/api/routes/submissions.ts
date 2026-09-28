@@ -47,8 +47,15 @@ submissionsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const { id } = parseWith(idParamSchema, req.params, 'path parameter');
+    const user = requireUser(req);
     const submission = await repo.findSubmission(id);
     if (!submission) throw ApiError.notFound(`Submission ${id} does not exist`);
+
+    // Submissions are private to their author. A mismatch (or a legacy row with no
+    // owner) answers 404 rather than 403 so ids can't be probed for existence.
+    if (submission.userId !== user.id) {
+      throw ApiError.notFound(`Submission ${id} does not exist`);
+    }
 
     const problem = await repo.findProblem(submission.problemId);
     const isFinished = submission.status === 'COMPLETED' || submission.status === 'FAILED';
@@ -126,10 +133,12 @@ submissionsRouter.get(
   asyncHandler(async (req, res) => {
     const query = parseWith(listSubmissionsQuerySchema, req.query, 'query parameters');
     const user = requireUser(req);
-    const mine = query.mine ?? true;
 
+    // History is always scoped to the requester. `mine` stays accepted (so old
+    // bookmarks don't 400) but is ignored — `mine=false` used to expose every
+    // student's submission ids and scores.
     const submissions = await repo.listSubmissions({
-      userId: mine ? user.id : undefined,
+      userId: user.id,
       problemId: query.problemId,
       status: query.status,
       limit: query.limit ?? 25,

@@ -251,6 +251,21 @@ describe('history and progress', () => {
     expect(otherHistory.body.count).toBe(0);
   });
 
+  it('keeps submission details private to their author', async () => {
+    const body = await submitAndWait(CORRECT);
+    const submissionId = (body.submission as Record<string, unknown>).id as number;
+
+    // The author can read their own submission back.
+    await request(app).get(`/api/submissions/${submissionId}`).expect(200);
+
+    // Another account gets a 404 (not 403) so ids can't be probed for existence.
+    const other = await repo.ensureUser('other-student');
+    await request(app)
+      .get(`/api/submissions/${submissionId}`)
+      .set('x-user-id', String(other.id))
+      .expect(404);
+  });
+
   it('reports dashboard progress for the requesting user', async () => {
     await submitAndWait(CORRECT);
 
