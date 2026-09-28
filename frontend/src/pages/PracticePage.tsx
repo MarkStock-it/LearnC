@@ -138,7 +138,13 @@ export function PracticePage() {
   const focusMode = !activityOpen && !testsOpen;
 
   return (
-    <div className="flex min-h-[calc(100dvh-3.5rem)] flex-col px-3 pb-3 pt-3 md:px-5">
+    <div
+      className="flex min-h-[calc(100dvh-3.5rem)] flex-col px-3 pb-3 pt-3"
+      /* Break out of the app shell's centered max-width: the three-panel workbench
+       * is a full-viewport instrument. The calc recentres on the viewport, cancelling
+       * the shell's max-width and side padding in one move. */
+      style={{ marginLeft: 'calc(50% - 50vw)', marginRight: 'calc(50% - 50vw)', width: '100vw' }}
+    >
       <StickyNotes />
       <MemoryViz open={memoryOpen} onClose={() => setMemoryOpen(false)} />
 
