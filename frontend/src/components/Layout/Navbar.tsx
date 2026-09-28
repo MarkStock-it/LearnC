@@ -12,6 +12,11 @@ export function Navbar() {
   const location = useLocation();
   const [accountName, setAccountName] = useState<string | null>(null);
 
+  // The workbench carries its own in-layout top bar (back button, breadcrumb,
+  // preference circles), so the site navbar would be duplicate chrome there.
+  const onWorkbench = /^\/problems\/\d+$/.test(location.pathname);
+  if (onWorkbench) return null;
+
   useEffect(() => {
     if (!isLoggedIn()) {
       setAccountName(null);
