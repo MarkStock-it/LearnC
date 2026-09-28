@@ -6,8 +6,11 @@ import { useCodeSubmission } from '../hooks/useCodeSubmission';
 import { CodeEditor } from '../components/Editor/CodeEditor';
 import { ProblemStatement } from '../components/ProblemView/ProblemStatement';
 import { TestResultsTable } from '../components/ProblemView/TestResultsTable';
+import { ExecutionStack } from '../components/ProblemView/ExecutionStack';
+import { MemoryViz } from '../components/ProblemView/MemoryViz';
 import { StatusMark } from '../components/ui/StatusMark';
 import { revealDelay } from '../lib/reveal';
+import { usePreferences } from '../lib/preferences';
 
 /**
  * Spoken summary of a finished submission.
@@ -70,6 +73,8 @@ export function PracticePage() {
 
   const [code, setCode] = useState(SKELETON);
   const { phase, detail, liveStatus, error, elapsedMs, submit, reset } = useCodeSubmission(id);
+  const [prefs] = usePreferences();
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   /**
    * Restore in-progress work once per problem.
@@ -172,6 +177,16 @@ export function PracticePage() {
             <button type="button" className="btn btn-primary" onClick={runTests} disabled={running || code.trim().length === 0}>
               {running ? 'Grading…' : 'Run tests'}
             </button>
+            {prefs.memoryViz ? (
+              <button
+                type="button"
+                className="btn btn-quiet"
+                onClick={() => setMemoryOpen(true)}
+                aria-haspopup="dialog"
+              >
+                Memory
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-quiet"
@@ -214,8 +229,11 @@ export function PracticePage() {
           ) : null}
 
           {detail ? <TestResultsTable detail={detail} /> : null}
+          {detail && prefs.executionStack ? <ExecutionStack detail={detail} /> : null}
         </section>
       </div>
+
+      <MemoryViz open={memoryOpen} onClose={() => setMemoryOpen(false)} />
     </div>
   );
 }

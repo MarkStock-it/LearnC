@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
 import { editorExtensions } from './editorTheme';
+import { cLintExtension } from './cLint';
 import { usePreferredScheme } from '../../lib/usePreferredScheme';
+import { usePreferences } from '../../lib/preferences';
 
 interface Props {
   value: string;
@@ -27,7 +29,13 @@ interface Props {
  */
 export function CodeEditor({ value, onChange, readOnly = false, height = '100%' }: Props) {
   const scheme = usePreferredScheme();
-  const extensions = useMemo(() => [cpp(), ...editorExtensions(scheme === 'dark')], [scheme]);
+  const [prefs] = usePreferences();
+  // The linter extension list must stay referentially stable while the editor is
+  // mounted; it is rebuilt only when the live-check preference flips.
+  const extensions = useMemo(
+    () => [cpp(), ...editorExtensions(scheme === 'dark'), ...(prefs.liveCheck ? [cLintExtension] : [])],
+    [scheme, prefs.liveCheck],
+  );
 
   return (
     <CodeMirror

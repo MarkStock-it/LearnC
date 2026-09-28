@@ -474,6 +474,22 @@
 
 
 
+  /* — Memory walkthrough: the row a step just wrote flashes once --------- */
+  @keyframes mem-flash-bg {
+    0% {
+      background-color: var(--color-accent-quiet);
+      box-shadow: inset 0 0 0 1px var(--color-accent);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: inset 0 0 0 1px transparent;
+    }
+  }
+
+  .mem-flash {
+    animation: mem-flash-bg 0.7s var(--ease-out);
+  }
+
   /* — Translucent toolbar: content scrolls beneath, no hard divider ------ */
   .toolbar {
     position: sticky;

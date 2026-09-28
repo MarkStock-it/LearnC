@@ -1,0 +1,84 @@
+<script>
+// ——— workbench review harness: fake session + stubbed problem & crashed submission ———
+(function () {
+  localStorage.setItem('c-practice.token', 'review-token');
+  localStorage.setItem('c-practice.student', 'mark');
+
+  var problem = {
+    problem: {
+      id: 7,
+      problemSetId: 1,
+      title: 'Array Sum',
+      description: 'Read **n** integers and print their total. The first line holds n; the second line holds the n values, space separated.',
+      constraints: { time_limit_seconds: 2, memory_limit_mb: 256, input_format: '', output_format: '', sample_input: '', sample_output: '' },
+      sampleInput: null,
+      sampleOutput: null,
+      difficulty: 'easy',
+      tags: ['arrays', 'loops'],
+      aiGenerated: false,
+      testCaseCount: 7,
+      publicTestCaseCount: 3,
+      publicTestCases: [
+        { id: 1, inputData: '3\n1 2 3', expectedOutput: '6', description: 'Sample pair' },
+        { id: 2, inputData: '1\n5', expectedOutput: '5', description: 'Single element' },
+        { id: 3, inputData: '3\n-1 -2 -3', expectedOutput: '-6', description: 'Negative values' },
+      ],
+    },
+    progress: { attempts: 3, solved: false, bestPassedCount: 6, lastSubmittedAt: '2026-09-28T10:00:00Z' },
+  };
+
+  var sets = { count: 1, problemSets: [{ id: 1, title: 'PROG 1 — Midterm 2024', description: null, examYear: 2024, examSemester: 'test', difficulty: 'easy', problemCount: 8, createdAt: '2026-09-01T00:00:00Z' }] };
+
+  function result(id, isPublic, passed, errorType, runtimeMs, stderr) {
+    return {
+      testCaseId: id, label: isPublic ? null : 'Hidden case', description: null,
+      isPublic: isPublic, passed: passed, errorType: errorType,
+      message: passed ? 'Accepted' : (errorType === 'RUNTIME_ERROR' ? 'The program terminated abnormally (crash or non-zero exit)' : 'Execution exceeded the time limit'),
+      runtimeMs: runtimeMs, memoryUsedMb: 2.1, stderr: stderr || null,
+    };
+  }
+
+  var submission = {
+    submission: {
+      id: 15, problemId: 7, problemTitle: 'Array Sum', status: 'COMPLETED',
+      compilationError: null, executor: 'local', errorMessage: null,
+      passedCount: 6, totalCount: 7, createdAt: '2026-09-28T10:02:00Z',
+      completedAt: '2026-09-28T10:02:04Z',
+      code: 'int main(void){ return 0; }', sandbox: 'local', isFinished: true,
+    },
+    results: [
+      result(1, true, true, 'PASS', 3, null),
+      result(2, true, true, 'PASS', 2, null),
+      result(3, true, true, 'PASS', 2, null),
+      result(4, false, true, 'PASS', 4, null),
+      result(5, false, true, 'PASS', 2, null),
+      result(6, false, true, 'PASS', 2, null),
+      result(7, false, false, 'RUNTIME_ERROR', 2, 'Program terminated by signal 11 (SIGSEGV): invalid memory reference at pc 0x401234'),
+    ],
+    solved: false,
+    limits: { timeLimitSeconds: 2, memoryLimitMb: 256 },
+  };
+
+  var realFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : input.url;
+    if (url.includes('/api/auth/me')) {
+      var me = { user: { id: 1, username: 'mark', email: 'mark@example.edu' }, ai: { userId: 1, hasPassword: true, hasGeminiKey: false, aiProvider: 'server' } };
+      return Promise.resolve(new Response(JSON.stringify(me), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (url.includes('/problem-sets')) {
+      return Promise.resolve(new Response(JSON.stringify(sets), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (/\/api\/problems\/\d+$/.test(url)) {
+      return Promise.resolve(new Response(JSON.stringify(problem), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (/\/api\/submissions\/\d+$/.test(url)) {
+      return Promise.resolve(new Response(JSON.stringify(submission), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (/\/api\/submissions$/.test(url) && (init && init.method) === 'POST') {
+      return Promise.resolve(new Response(JSON.stringify({ submissionId: 15, status: 'QUEUED', pollIntervalMs: 400 }), { status: 202, headers: { 'Content-Type': 'application/json' } }));
+    }
+    return realFetch(input, init);
+  };
+})();
+</script>
