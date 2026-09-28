@@ -228,30 +228,42 @@ export function PracticePage() {
           </div>
         </header>
 
-        {/* — The three panels — */}
+        {/* — The three panels —
+         *
+         * Side panels stay mounted and animate their width between their size and
+         * zero, while the editor's flex-1 absorbs the freed space — one continuous
+         * motion, no unmount pop. Content fades and slides as its box collapses.
+         */}
         <div className="relative flex min-h-0 flex-1 gap-2 px-2 pb-2">
           {/* Activity panel (left) */}
-          {activityOpen ? (
-            <aside
-              className="relative w-[300px] flex-none overflow-hidden rounded-[16px] bg-[var(--color-paper)] md:w-[340px]"
-              style={{ animation: `panel-in 300ms ${PANEL_EASE}` }}
-              aria-label="Problem statement"
+          <aside
+            className="relative flex-none overflow-visible"
+            style={{
+              width: activityOpen ? 'min(340px, 30vw)' : '0px',
+              transition: `width 300ms ${PANEL_EASE}`,
+            }}
+            aria-label="Problem statement"
+            aria-hidden={!activityOpen}
+          >
+            <EdgeToggle side="left" open={activityOpen} onClick={() => setActivityOpen((v) => !v)} />
+            <div
+              className="h-full overflow-y-auto rounded-[16px] bg-[var(--color-paper)] p-[var(--space-lg)]"
+              style={{
+                width: activityOpen ? 'min(340px, 30vw)' : '0px',
+                opacity: activityOpen ? 1 : 0,
+                transform: activityOpen ? 'translateX(0)' : 'translateX(-40px)',
+                transition: `opacity 300ms ${PANEL_EASE}, transform 300ms ${PANEL_EASE}`,
+              }}
             >
-              <EdgeToggle side="left" open onClick={() => setActivityOpen(false)} />
-              <div className="h-full overflow-y-auto p-[var(--space-lg)]">
-                <ProblemStatement problem={problem} />
-              </div>
-            </aside>
-          ) : (
-            <div className="relative flex w-0 flex-none" aria-hidden={!activityOpen}>
-              <EdgeToggle side="left" open={false} onClick={() => setActivityOpen(true)} />
+              <ProblemStatement problem={problem} />
             </div>
-          )}
+          </aside>
 
-          {/* Code editor panel (centre — dominant) */}
+          {/* Code editor panel (centre — dominant). flex-1 does the easing for us:
+           * as a sibling's width animates, the flexbox resolves the remainder every
+           * frame, so the editor expands and contracts in lockstep. */}
           <section
-            className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--color-surface-2)] transition-[flex] duration-300"
-            style={{ transitionTimingFunction: PANEL_EASE }}
+            className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--color-surface-2)]"
             aria-label="Your solution"
           >
             <div className="flex flex-none items-center gap-2 px-3 py-1.5">
@@ -287,40 +299,46 @@ export function PracticePage() {
             </div>
           </section>
 
-          {/* Test cases panel (right) */}
-          {testsOpen ? (
-            <aside
-              className="relative w-[340px] flex-none overflow-hidden rounded-[16px] bg-[var(--color-paper)] md:w-[380px]"
-              style={{ animation: `panel-in 300ms ${PANEL_EASE}` }}
-              aria-label="Test cases and results"
+          {/* Test cases panel (right) — mirrors the left panel's animation. */}
+          <aside
+            className="relative flex-none overflow-visible"
+            style={{
+              width: testsOpen ? 'min(380px, 32vw)' : '0px',
+              transition: `width 300ms ${PANEL_EASE}`,
+            }}
+            aria-label="Test cases and results"
+            aria-hidden={!testsOpen}
+          >
+            <EdgeToggle side="right" open={testsOpen} onClick={() => setTestsOpen((v) => !v)} />
+            <div
+              className="flex h-full flex-col overflow-y-auto rounded-[16px] bg-[var(--color-paper)] p-[var(--space-md)]"
+              style={{
+                width: testsOpen ? 'min(380px, 32vw)' : '0px',
+                opacity: testsOpen ? 1 : 0,
+                transform: testsOpen ? 'translateX(0)' : 'translateX(40px)',
+                transition: `opacity 300ms ${PANEL_EASE}, transform 300ms ${PANEL_EASE}`,
+              }}
             >
-              <EdgeToggle side="right" open onClick={() => setTestsOpen(false)} />
-              <div className="flex h-full flex-col overflow-y-auto p-[var(--space-md)]">
-                {error ? (
-                  <p className="type-small mb-2 text-[var(--color-fail)]" role="alert">
-                    No verdict came back: {error}
+              {error ? (
+                <p className="type-small mb-2 text-[var(--color-fail)]" role="alert">
+                  No verdict came back: {error}
+                </p>
+              ) : null}
+              {detail ? (
+                <div className="flex flex-col gap-[var(--space-md)]">
+                  <TestResultsTable detail={detail} />
+                  {prefs.executionStack ? <ExecutionStack detail={detail} /> : null}
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+                  <p className="type-small text-[var(--color-muted)]">No results yet.</p>
+                  <p className="type-micro max-w-[240px]">
+                    Press Run tests — verdicts, inputs, expected outputs and diffs land here.
                   </p>
-                ) : null}
-                {detail ? (
-                  <div className="flex flex-col gap-[var(--space-md)]">
-                    <TestResultsTable detail={detail} />
-                    {prefs.executionStack ? <ExecutionStack detail={detail} /> : null}
-                  </div>
-                ) : (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-                    <p className="type-small text-[var(--color-muted)]">No results yet.</p>
-                    <p className="type-micro max-w-[240px]">
-                      Press Run tests — verdicts, inputs, expected outputs and diffs land here.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </aside>
-          ) : (
-            <div className="relative flex w-0 flex-none" aria-hidden={!testsOpen}>
-              <EdgeToggle side="right" open={false} onClick={() => setTestsOpen(true)} />
+                </div>
+              )}
             </div>
-          )}
+          </aside>
         </div>
       </div>
 
