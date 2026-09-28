@@ -38,8 +38,9 @@ export function createApp(): Express {
   app.use('/api/problem-sets', problemSetsRouter);
   app.use('/api/admin', adminRouter);
 
-  // Authentication is open (it resolves identity, it does not guard data).
-  app.use('/api/auth', authRouter);
+  // Authentication is open (it resolves identity, it does not guard data),
+  // but /api/auth/me reads req.user — resolve identity there too.
+  app.use('/api/auth', resolveUser(), authRouter);
 
   // Identity is only resolved where per-user data is needed. resolveUser is the
   // token-aware superset of the legacy currentUser stub.
