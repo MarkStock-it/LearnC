@@ -490,6 +490,14 @@
     animation: mem-flash-bg 0.7s var(--ease-out);
   }
 
+  /* — Workbench panel slide-in (collapsible side panels) —————— */
+  @keyframes panel-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--panel-from, -14px));
+    }
+  }
+
   /* — Translucent toolbar: content scrolls beneath, no hard divider ------ */
   .toolbar {
     position: sticky;
