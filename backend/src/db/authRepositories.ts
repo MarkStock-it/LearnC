@@ -130,9 +130,16 @@ export async function getSettings(userId: number): Promise<UserSettingsRecord> {
 export async function findOrCreateUserId(username: string, email?: string): Promise<number> {
   const existing = (await db()('users').where({ username }).first()) as { id: number } | undefined;
   if (existing) return Number(existing.id);
-  const result = await db()('users')
-    .insert({ username, email: email ?? `${username}@example.edu` }) as unknown as [{ insertId: number }];
-  const insertId = result[0]?.insertId;
+  const result = (await db()('users')
+    .insert({ username, email: email ?? `${username}@example.edu` })) as unknown as
+    | number
+    | Array<number | { insertId: number }>;
+  // Dialect-dependent: mysql2 may resolve to [id] (a raw number) or [{insertId}].
+  const insertId = Array.isArray(result)
+    ? typeof result[0] === 'number'
+      ? result[0]
+      : (result[0] as { insertId: number } | undefined)?.insertId
+    : result;
   if (typeof insertId !== 'number' || insertId <= 0) throw new Error('Could not create user');
   return insertId;
 }
