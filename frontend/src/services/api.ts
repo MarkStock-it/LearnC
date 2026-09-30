@@ -7,6 +7,8 @@
  * auth later touches only this module.
  */
 
+import { getGuestIdentity, isGuestMode, setGuestMode } from '../lib/guestMode';
+
 const USER_STORAGE_KEY = 'c-practice.student';
 const TOKEN_STORAGE_KEY = 'c-practice.token';
 
@@ -21,6 +23,7 @@ export interface AiSettings {
   hasPassword: boolean;
   hasGeminiKey: boolean;
   aiProvider: 'server' | 'gemini';
+  leaderboardPublic: boolean;
 }
 
 export interface MeResponse {
@@ -37,6 +40,7 @@ export interface GenerateResponse {
     verificationPassed: boolean;
     verificationDetail: string;
     warnings: string[];
+    providerUsed?: 'gemini' | 'server' | 'offline';
   }>;
   problemSetId: number | null;
   geminiError: string | null;
@@ -45,6 +49,7 @@ export interface GenerateResponse {
 
 export interface ProblemSetSummary {
   id: number;
+  userId?: number | null;
   title: string;
   description: string | null;
   examYear: number | null;
@@ -52,6 +57,31 @@ export interface ProblemSetSummary {
   difficulty: Difficulty;
   problemCount: number;
   createdAt: string;
+  isPublic?: boolean;
+  publishedAt?: string | null;
+  creatorName?: string | null;
+  firstProblemId?: number | null;
+}
+
+export interface PublicBundleDetail {
+  problemSet: ProblemSetSummary;
+  problems: Array<{ id: number; title: string; difficulty: Difficulty; tags: string[]; description: string }>;
+  totalProblems: number;
+  limit: number;
+  offset: number;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  solvedProblems: number;
+}
+
+export interface LeaderboardResponse {
+  entries: LeaderboardEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -167,6 +197,15 @@ export interface SubmissionSummary {
   executor: string | null;
   createdAt: string;
   completedAt: string | null;
+  tags: string[];
+}
+
+export interface ProblemListResponse {
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  problems: ProblemListItem[];
 }
 
 export interface DashboardResponse {
@@ -191,6 +230,40 @@ export interface DashboardResponse {
   }>;
 }
 
+export interface MemoryTraceVariable {
+  id: string;
+  name: string;
+  type: string;
+  value: string;
+  pointer: boolean;
+  heap: boolean;
+  depth: number;
+}
+
+export interface MemoryTraceStep {
+  line: number;
+  sequence: number;
+  variables: MemoryTraceVariable[];
+  heap: Array<{ address: string; type: string; freed: boolean }>;
+}
+
+export interface MemoryTraceResponse {
+  steps: MemoryTraceStep[];
+  traceable: boolean;
+  message: string | null;
+  stderr: string;
+}
+
+export interface RunCodeResponse {
+  status: 'completed' | 'timeout' | 'runtime_error' | 'compilation_error';
+  compilationError: string | null;
+  compilerOutput: string;
+  stdout: string;
+  stderr: string;
+  runtimeMs: number | null;
+  executor: 'docker' | 'local';
+}
+
 export interface HealthResponse {
   status: string;
   env: string;
@@ -210,6 +283,7 @@ export class ApiError extends Error {
 }
 
 export function getStudentName(): string {
+  if (isGuestMode()) return getGuestIdentity();
   return window.localStorage.getItem(USER_STORAGE_KEY) ?? '';
 }
 
@@ -230,21 +304,28 @@ export function setToken(token: string): void {
 
 /** True when the stored credential is a real session token (login flow). */
 export function isLoggedIn(): boolean {
-  return getToken().length > 0;
+  return !isGuestMode() && getToken().length > 0;
+}
+
+/** Include user identity in React Query keys for any response scoped to a user. */
+export function getQueryIdentity(): string {
+  if (isGuestMode()) return `guest:${getGuestIdentity()}`;
+  if (isLoggedIn()) return `account:${getToken()}`;
+  return 'anonymous';
 }
 
 export function signOut(): void {
   setToken('');
+  setStudentName('');
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const student = getStudentName();
+  const token = isGuestMode() ? '' : getToken();
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : student ? { Authorization: `Bearer ${student}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -264,18 +345,71 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  isAuthenticated: () => isLoggedIn(),
+
   health: () => http<HealthResponse>('/health'),
 
-  problemSets: () => http<{ count: number; problemSets: ProblemSetSummary[] }>('/problem-sets'),
+  traceMemory: (problemId: number, code: string, stdin: string) =>
+    http<MemoryTraceResponse>('/memory-trace', {
+      method: 'POST',
+      body: JSON.stringify({ problemId, code, stdin }),
+    }),
 
-  problems: (params: { problemSetId?: number; difficulty?: Difficulty; tag?: string } = {}) => {
+  runCode: (problemId: number, code: string, stdin: string) =>
+    http<RunCodeResponse>('/run-code', {
+      method: 'POST',
+      body: JSON.stringify({ problemId, code, stdin }),
+    }),
+
+  problemSets: (params: { search?: string; difficulty?: Difficulty; tag?: string; limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set('search', params.search);
+    if (params.difficulty) query.set('difficulty', params.difficulty);
+    if (params.tag) query.set('tag', params.tag);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const suffix = query.toString();
+    return http<{ count: number; total: number; limit: number; offset: number; problemSets: ProblemSetSummary[] }>(`/problem-sets${suffix ? `?${suffix}` : ''}`);
+  },
+
+  publicBundles: (params: { search?: string; difficulty?: Difficulty; tag?: string; limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set('search', params.search);
+    if (params.difficulty) query.set('difficulty', params.difficulty);
+    if (params.tag) query.set('tag', params.tag);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const suffix = query.toString();
+    return http<{ count: number; total: number; limit: number; offset: number; problemSets: ProblemSetSummary[] }>(`/public-bundles${suffix ? `?${suffix}` : ''}`);
+  },
+
+  publicBundle: (id: number, params: { limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const suffix = query.toString();
+    return http<PublicBundleDetail>(`/public-bundles/${id}${suffix ? `?${suffix}` : ''}`);
+  },
+
+  publishBundle: (id: number, isPublic: boolean) => http<{ problemSet: ProblemSetSummary }>(`/problem-sets/${id}/publish`, { method: 'POST', body: JSON.stringify({ isPublic }) }),
+
+  deleteBundle: (id: number) => http<void>(`/problem-sets/${id}?confirm=true`, { method: 'DELETE' }),
+
+  forkBundle: (id: number, title?: string) => http<{ problemSetId: number }>(`/problem-sets/${id}/fork`, { method: 'POST', body: JSON.stringify({ title }) }),
+
+  problems: (params: { problemSetId?: number; difficulty?: Difficulty; tag?: string; search?: string; limit?: number; offset?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.problemSetId !== undefined) query.set('problemSetId', String(params.problemSetId));
     if (params.difficulty) query.set('difficulty', params.difficulty);
     if (params.tag) query.set('tag', params.tag);
+    if (params.search) query.set('search', params.search);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
     const suffix = query.toString();
-    return http<{ count: number; problems: ProblemListItem[] }>(`/problems${suffix ? `?${suffix}` : ''}`);
+    return http<ProblemListResponse>(`/problems${suffix ? `?${suffix}` : ''}`);
   },
+
+  problemSet: (id: number) => http<{ problemSet: ProblemSetSummary }>(`/problem-sets/${id}`),
 
   problem: (id: number) => http<ProblemResponse>(`/problems/${id}`),
 
@@ -287,28 +421,48 @@ export const api = {
 
   submission: (id: number) => http<SubmissionResponse>(`/submissions/${id}`),
 
-  submissions: (params: { mine?: boolean; problemId?: number; limit?: number } = {}) => {
+  submissions: (params: { mine?: boolean; problemId?: number; status?: SubmissionStatus; limit?: number; offset?: number } = {}) => {
     const query = new URLSearchParams();
     query.set('mine', String(params.mine ?? true));
     if (params.problemId !== undefined) query.set('problemId', String(params.problemId));
+    if (params.status) query.set('status', params.status);
     if (params.limit !== undefined) query.set('limit', String(params.limit));
-    return http<{ count: number; submissions: SubmissionSummary[] }>(`/submissions?${query.toString()}`);
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    return http<{ count: number; total: number; limit: number; offset: number; submissions: SubmissionSummary[] }>(`/submissions?${query.toString()}`);
   },
 
   dashboard: () => http<DashboardResponse>('/dashboard/stats'),
 
-  // --- auth ---
-  register: (username: string, password: string) =>
-    http<{ token: string; user: AuthUser }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    }),
+  leaderboard: (params: { limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const suffix = query.toString();
+    return http<LeaderboardResponse>(`/dashboard/leaderboard${suffix ? `?${suffix}` : ''}`);
+  },
 
-  login: (username: string, password: string) =>
-    http<{ token: string; user: AuthUser }>('/auth/login', {
+  // --- auth ---
+  register: async (username: string, password: string) => {
+    const result = await http<{ token: string; user: AuthUser }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    }),
+    });
+    setGuestMode(false);
+    setToken(result.token);
+    setStudentName(result.user.username);
+    return result;
+  },
+
+  login: async (username: string, password: string) => {
+    const result = await http<{ token: string; user: AuthUser }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    setGuestMode(false);
+    setToken(result.token);
+    setStudentName(result.user.username);
+    return result;
+  },
 
   logout: () => http<void>('/auth/logout', { method: 'POST' }),
 
@@ -321,6 +475,12 @@ export const api = {
     }),
 
   clearGeminiKey: () => http<{ ai: AiSettings }>('/auth/ai-settings/gemini-key', { method: 'DELETE' }),
+
+  saveLeaderboardSettings: (isPublic: boolean) =>
+    http<{ ai: AiSettings }>('/auth/leaderboard-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ isPublic }),
+    }),
 
   // --- per-user AI generation ---
   generateProblem: (params: {
@@ -339,7 +499,7 @@ export const api = {
       body: JSON.stringify({
         difficulty: params.difficulty,
         topics: params.topics,
-        testCaseCount: params.testCaseCount ?? 5,
+        testCaseCount: params.testCaseCount ?? 6,
         publicTestCaseCount: params.publicTestCaseCount ?? 2,
         persist: true,
         geminiModel: params.geminiModel,

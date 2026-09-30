@@ -2,11 +2,14 @@ import { config } from '../config.js';
 import {
   generatedProblemSchema,
   generatedTestCasesSchema,
+  generatedBundleSchema,
   type GeneratedProblem,
   type GeneratedTestCase,
 } from '../domain/problem.js';
 import type { Difficulty } from '../domain/types.js';
+import { problemHelperFileSchema, type ProblemHelperFile } from '../domain/sourceFiles.js';
 import { logger } from '../utils/logger.js';
+import { z } from 'zod';
 import { compareOutput } from './evaluationService.js';
 import { getExecutor } from './executor/index.js';
 import { extractJson, problemSystemPrompt, testCaseSystemPrompt } from './aiPrompts.js';
@@ -23,6 +26,7 @@ export interface GenerateOptions {
   instructions?: string;
   /** Titles to avoid repeating within a quiz. */
   avoidTitles?: string[];
+  excludeProblemIds?: number[];
 }
 
 export interface GeneratedBundle {
@@ -30,6 +34,7 @@ export interface GeneratedBundle {
   testCases: GeneratedTestCase[];
   source: 'anthropic' | 'offline' | 'openai-compat' | 'gemini';
   warnings: string[];
+  helperFiles: ProblemHelperFile[];
 }
 
 export interface VerificationOutcome {
@@ -145,6 +150,7 @@ function bundleFromBank(problem: BankProblem): GeneratedBundle {
     })),
     source: 'offline',
     warnings: ['Generated from the curated offline bank (AI_PROVIDER=offline).'],
+    helperFiles: [],
   };
 }
 
@@ -154,27 +160,68 @@ async function generateWithModel(options: GenerateOptions): Promise<GeneratedBun
 
   for (let attempt = 1; attempt <= config.ai.maxAttempts; attempt += 1) {
     try {
-      const problemText = await callModel(problemSystemPrompt(options), 'Generate a C programming problem.', 2500);
+      const problemText = await callModel(
+        problemSystemPrompt(options),
+        `Generate a C programming problem. Avoid these similar existing problems: ${JSON.stringify(await listExistingProblemTitles(options.excludeProblemIds ?? []))}`,
+        4000,
+      );
       const problem = generatedProblemSchema.parse(extractJson(problemText));
 
-      const testCaseText = await callModel(
-        testCaseSystemPrompt(problem, options),
-        'Generate the test cases as specified.',
-        3000,
-      );
-      const parsedCases = generatedTestCasesSchema.parse(extractJson(testCaseText));
-
-      if (parsedCases.test_cases.length < 2) {
-        throw new Error('Fewer than two test cases were generated');
+      let testCases: GeneratedTestCase[] | null = null;
+      let helperFiles: ProblemHelperFile[] = [];
+      for (const stage of ['test-cases', 'helper-files'] as const) {
+        for (let stageAttempt = 1; stageAttempt <= 3; stageAttempt += 1) {
+          try {
+            if (stage === 'test-cases') {
+              const caseText = await callModel(testCaseSystemPrompt(problem, options), 'Generate the test cases as specified.', 3000);
+              testCases = generatedTestCasesSchema.parse(extractJson(caseText)).test_cases;
+              const minimumRequired = Math.max(6, options.publicTestCaseCount + 4);
+              if (testCases.length < minimumRequired) throw new Error(`Expected at least ${minimumRequired} cases, got ${testCases.length}`);
+              if (!testCases.some((testCase) => testCase.is_public)) {
+                testCases[0]!.is_public = true;
+                warnings.push('No public test case was returned; the first one was promoted to public.');
+              }
+              break;
+            }
+            const helperText = await callModel(
+              'Decide if reusable C helpers would materially help a student. Usually return no files. If useful, return strict JSON with helper_files array of {filename,content,language,purpose,autoInclude}. Avoid main(), use unique names, and make helpers compile cleanly with the entry source.',
+              JSON.stringify({ title: problem.title, description: problem.description, topics: options.topics }),
+              1200,
+            );
+            const parsedHelpers = z.object({ helper_files: z.array(problemHelperFileSchema).max(5).default([]) }).parse(extractJson(helperText));
+            helperFiles = parsedHelpers.helper_files;
+            break;
+          } catch (error) {
+            if (stageAttempt === 3) throw error;
+            const delay = Math.min(1_000 * 2 ** (stageAttempt - 1), 4_000);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
       }
 
-      // The sample pair is authoritative: make sure it is present and public (plan §4.3).
-      if (!parsedCases.test_cases.some((testCase) => testCase.is_public)) {
-        parsedCases.test_cases[0]!.is_public = true;
-        warnings.push('No public test case was returned; the first one was promoted to public.');
+      const validation = await validateBundle(problem, testCases ?? []);
+      if (!validation.passed) {
+        const correctedText = await callModel(
+          'You are a careful C problem auditor. Correct the provided problem and test cases only when necessary. Ensure the reference implementation compiles, every expected result is correct, the requested examples/specification/constraints agree, and the requested topic/difficulty fit. Return the full corrected JSON bundle.',
+          JSON.stringify({ problem, test_cases: testCases, issues: validation.detail }),
+          4500,
+        );
+        const corrected = generatedBundleSchema.parse(extractJson(correctedText));
+        return {
+          problem: { ...corrected, reference_solution: corrected.reference_solution },
+          testCases: corrected.test_cases,
+          source: config.ai.provider === 'openai-compat' ? 'openai-compat' : 'anthropic',
+          warnings,
+          helperFiles: corrected.helper_files,
+        };
       }
-
-      return { problem, testCases: parsedCases.test_cases, source: config.ai.provider === 'openai-compat' ? 'openai-compat' : 'anthropic', warnings };
+      return {
+        problem,
+        testCases: testCases ?? [],
+        source: config.ai.provider === 'openai-compat' ? 'openai-compat' : 'anthropic',
+        warnings,
+        helperFiles,
+      };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
       logger.warn({ attempt, maxAttempts: config.ai.maxAttempts, err: lastError }, 'AI generation attempt failed');
@@ -190,6 +237,29 @@ async function generateWithModel(options: GenerateOptions): Promise<GeneratedBun
  * provider is offline or the model keeps returning unusable JSON, so callers always
  * receive a usable bundle.
  */
+async function listExistingProblemTitles(excludeIds: number[]): Promise<string[]> {
+  const { listPublicProblemSets } = await import('../db/repositories.js');
+  const excluded = new Set(excludeIds);
+  const sets = await listPublicProblemSets({ limit: 200 });
+  return sets.filter((set) => !excluded.has(set.id)).map((set) => set.title);
+}
+
+async function validateBundle(problem: GeneratedProblem, testCases: GeneratedTestCase[]): Promise<VerificationOutcome> {
+  if (!problem.reference_solution) return { attempted: false, passed: false, detail: 'No reference solution was returned.', source: 'sample-only' };
+  const structural = [
+    ['Examples', /##?\s*Examples?/i.test(problem.description)],
+    ['Notes', /##?\s*(Notes|Hints?)/i.test(problem.description)],
+    ['input format', problem.constraints.input_format.trim().length > 12],
+    ['output format', problem.constraints.output_format.trim().length > 12],
+    ['two public examples', testCases.filter((item) => item.is_public).length >= 2],
+    ['four hidden cases', testCases.filter((item) => !item.is_public).length >= 4],
+  ].filter(([, valid]) => !valid).map(([name]) => name);
+  const execution = await verifyTestCases(problem, testCases);
+  return structural.length
+    ? { ...execution, passed: false, detail: `${execution.detail} Missing/inadequate: ${structural.join(', ')}.` }
+    : execution;
+}
+
 export async function generateProblemBundle(options: GenerateOptions): Promise<GeneratedBundle> {
   if (!isAiConfigured()) {
     return bundleFromBank(pickBankProblem(options));
@@ -221,11 +291,11 @@ export async function generateProblemBundleForUser(
   if (userChoice.aiProvider === 'gemini' && userChoice.geminiKey) {
     const { generateWithGemini, generateWithGeminiCompact } = await import('./geminiService.js');
     try {
-      const { problem, testCases } = userChoice.compact === false
+      const { problem, testCases, helperFiles } = userChoice.compact === false
         ? await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel)
         : await generateWithGeminiCompact(userChoice.geminiKey, options, userChoice.geminiModel);
       return {
-        bundle: { problem, testCases, source: 'gemini', warnings },
+        bundle: { problem, testCases, source: 'gemini', warnings, helperFiles },
         providerUsed: 'gemini',
         geminiError: null,
       };
@@ -236,10 +306,10 @@ export async function generateProblemBundleForUser(
         // Escalate once to the higher-quality two-call flow before leaving Gemini.
         // (Only when compact mode was requested; two-call already failed if not.)
         if (userChoice.compact === false) throw error;
-        const { problem, testCases } = await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel);
+        const { problem, testCases, helperFiles } = await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel);
         warnings.push(`Compact generation failed (${firstError}); used the detailed two-call flow instead.`);
         return {
-          bundle: { problem, testCases, source: 'gemini', warnings },
+          bundle: { problem, testCases, source: 'gemini', warnings, helperFiles },
           providerUsed: 'gemini',
           geminiError: null,
         };
@@ -276,6 +346,7 @@ export async function generateProblemBundleForUser(
 export async function verifyTestCases(
   problem: GeneratedProblem,
   testCases: GeneratedTestCase[],
+  helperFiles: ProblemHelperFile[] = [],
 ): Promise<VerificationOutcome> {
   if (!problem.reference_solution) {
     return {
@@ -298,8 +369,16 @@ export async function verifyTestCases(
     };
   }
 
+  const helperSources = helperFiles;
   const outcome = await executor.execute({
     code: problem.reference_solution,
+    ...(helperSources.length ? {
+      files: [
+        { filename: 'solution.c', content: problem.reference_solution, autoInclude: true },
+        ...helperSources.map((file) => ({ filename: file.filename, content: file.content, autoInclude: file.autoInclude })),
+      ],
+      entryFile: 'solution.c',
+    } : {}),
     testCases: testCases.map((testCase, index) => ({
       id: index,
       inputData: testCase.input,

@@ -7,8 +7,8 @@ import { tags } from '@lezer/highlight';
  *
  * Every value here is `var(--token)` rather than a resolved colour: CodeMirror writes
  * these into a stylesheet, so the variables resolve at paint time. That keeps one
- * source of truth (tokens.css), and the editor follows light/dark automatically when
- * the user flips their system appearance — no JavaScript colour math, no drift.
+ * source of truth (tokens.css), and the editor follows the user's explicit theme
+ * preference — no JavaScript colour math, no drift.
  */
 const UI_THEME = EditorView.theme({
   '&': {
@@ -44,14 +44,21 @@ const UI_THEME = EditorView.theme({
     backgroundColor: 'var(--color-accent-quiet)',
     outline: '1px solid var(--color-hairline)',
   },
+  '.cm-line.cm-c-lint-error': {
+    backgroundColor: 'color-mix(in oklab, var(--color-fail) 15%, transparent)',
+    boxShadow: 'inset 3px 0 0 var(--color-fail)',
+  },
+  '.cm-line.cm-c-lint-warning': {
+    backgroundColor: 'color-mix(in oklab, var(--color-warn) 14%, transparent)',
+    boxShadow: 'inset 3px 0 0 var(--color-warn)',
+  },
 });
 
 /**
  * The flag is the only thing that differs between schemes.
  *
  * Colours never branch in JavaScript — both modes apply the single UI_THEME above, and
- * `var(--token)` resolves against whatever tokens.css decided for the current
- * `prefers-color-scheme`. The flag only tells CodeMirror which of *its own* internal
+ * `var(--token)` resolves against the user's selected theme in tokens.css. The flag only tells CodeMirror which of *its own* internal
  * defaults to use (scrollbars, selection fallbacks, `.cm-content` base colour), and it is
  * declared explicitly for both schemes so neither inherits a library default.
  */

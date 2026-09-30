@@ -4,7 +4,8 @@ import * as authRepo from '../../db/authRepositories.js';
 import * as repo from '../../db/repositories.js';
 import { logger } from '../../utils/logger.js';
 import { ApiError, asyncHandler, parseWith } from '../http.js';
-import { requireUser } from '../middleware/currentUser.js';
+import { resolveUser } from '../middleware/tokenAuth.js';
+import { requireAuthenticatedUser } from '../middleware/currentUser.js';
 
 export const authRouter = Router();
 
@@ -26,15 +27,12 @@ authRouter.post(
 
     const existing = (await (await import('../../db/knex.js')).db()('users')
       .where({ username: body.username })
-      .first()) as { id: number } | undefined;
-    if (existing && (await authRepo.hasPassword(existing.id))) {
-      throw ApiError.badRequest('That username is already taken');
-    }
+      .first('id')) as { id: number } | undefined;
+    // Never let a new registration claim a legacy/passwordless row: its existing
+    // private content may belong to someone who previously used an unverified name.
+    if (existing) throw ApiError.badRequest('That username is already taken');
 
-    // A passwordless account is a leftover stub from the shared-name flow (or a
-    // half-created registration): registering claims it. Password-protected
-    // accounts are untouchable.
-    const userId = existing ? existing.id : await authRepo.findOrCreateUserId(body.username);
+    const userId = await authRepo.findOrCreateUserId(body.username);
     await authRepo.setPassword(userId, body.password);
     const token = authRepo.issueToken(userId);
     logger.info({ userId, username: body.username, claimed: Boolean(existing) }, 'account registered');
@@ -78,8 +76,9 @@ authRouter.post('/logout', (req, res) => {
 /** GET /api/auth/me — who am I + AI settings summary. */
 authRouter.get(
   '/me',
+  resolveUser(),
   asyncHandler(async (req, res) => {
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
     const settings = await authRepo.getSettings(user.id);
     res.json({ user, ai: settings });
   }),
@@ -87,14 +86,23 @@ authRouter.get(
 
 const aiSettingsSchema = z.object({
   provider: z.enum(['server', 'gemini']),
-  geminiApiKey: z.string().trim().max(200).optional(),
+  geminiApiKey: z.string().trim().max(255).optional(),
 });
+const leaderboardSettingsSchema = z.object({ isPublic: z.boolean() });
+
+authRouter.put('/leaderboard-settings', resolveUser(), asyncHandler(async (req, res) => {
+  const user = requireAuthenticatedUser(req);
+  const { isPublic } = parseWith(leaderboardSettingsSchema, req.body, 'request body');
+  await authRepo.setLeaderboardPublic(user.id, isPublic);
+  res.json({ ai: await authRepo.getSettings(user.id) });
+}));
 
 /** PUT /api/auth/ai-settings — store or clear the Gemini key / provider choice. */
 authRouter.put(
   '/ai-settings',
+  resolveUser(),
   asyncHandler(async (req, res) => {
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
     const body = parseWith(aiSettingsSchema, req.body, 'request body');
 
     if (body.provider === 'gemini') {
@@ -115,8 +123,9 @@ authRouter.put(
 /** DELETE /api/auth/ai-settings/gemini-key — remove the stored key. */
 authRouter.delete(
   '/ai-settings/gemini-key',
+  resolveUser(),
   asyncHandler(async (req, res) => {
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
     await authRepo.setGeminiKey(user.id, null);
     res.json({ ai: await authRepo.getSettings(user.id) });
   }),

@@ -75,7 +75,7 @@ async function main(): Promise<void> {
   const summary: Array<{ set: string; inserted: number; skipped: number; unverified: number }> = [];
 
   for (const plan of SETS) {
-    const existingSets = await repo.listProblemSets();
+    const existingSets = await repo.listProblemSets(instructor.id);
     const existing = existingSets.find((set) => set.title === plan.title);
 
     let problemSetId: number;
@@ -94,12 +94,12 @@ async function main(): Promise<void> {
         examYear: plan.examYear,
         examSemester: plan.examSemester,
         difficulty: plan.difficulty,
-        createdBy: instructor.id,
+        userId: instructor.id,
       });
       logger.info({ problemSetId, title: plan.title }, 'created problem set');
     }
 
-    const existingProblems = await repo.listProblems({ problemSetId });
+    const existingProblems = await repo.listProblems({ problemSetId, userId: instructor.id });
     let inserted = 0;
     let skipped = 0;
     let unverified = 0;

@@ -17,9 +17,13 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
     <MemoryRouter initialEntries={['/problems/7']}>
-      <Routes>
-        <Route path="/problems/:problemId" element={<PracticePage />} />
-      </Routes>
+      <div className="flex h-dvh flex-col overflow-hidden">
+        <main className="min-h-0 flex-1 overflow-hidden">
+          <Routes>
+            <Route path="/problems/:problemId" element={<PracticePage />} />
+          </Routes>
+        </main>
+      </div>
     </MemoryRouter>
   </QueryClientProvider>,
 );

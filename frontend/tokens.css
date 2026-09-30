@@ -143,49 +143,48 @@
 
 /* Dark mode keeps the anchor hue; only lightness and chroma move.
  * Body weight drops 50 units to compensate for the optical weight of light-on-dark.
- * Elevation still reads as lightness: raised surfaces are lighter than the canvas. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+ * Elevation still reads as lightness: raised surfaces are lighter than the canvas.
+ * Appearance is user-controlled in Preferences, not coupled to the OS setting. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-    --color-paper: oklch(15.5% 0.006 255);
-    --color-surface: oklch(19% 0.007 255);
-    --color-surface-2: oklch(12.8% 0.006 255);
-    --color-rule: oklch(27.5% 0.008 255);
-    --color-hairline: oklch(33% 0.009 255);
+  --color-paper: oklch(15.5% 0.006 255);
+  --color-surface: oklch(19% 0.007 255);
+  --color-surface-2: oklch(12.8% 0.006 255);
+  --color-rule: oklch(27.5% 0.008 255);
+  --color-hairline: oklch(33% 0.009 255);
 
-    --color-ink: oklch(94.5% 0.005 255);
-    --color-ink-soft: oklch(86% 0.006 255);
-    --color-muted: oklch(72% 0.009 255);
-    --color-faint: oklch(61% 0.01 255);
+  --color-ink: oklch(94.5% 0.005 255);
+  --color-ink-soft: oklch(86% 0.006 255);
+  --color-muted: oklch(72% 0.009 255);
+  --color-faint: oklch(61% 0.01 255);
 
-    --color-accent: oklch(66% 0.128 252);
-    --color-accent-hover: oklch(72% 0.13 252);
-    --color-accent-ink: oklch(16% 0.01 255);
-    --color-accent-quiet: oklch(27% 0.05 252);
-    --color-focus: oklch(72% 0.15 252);
+  --color-accent: oklch(66% 0.128 252);
+  --color-accent-hover: oklch(72% 0.13 252);
+  --color-accent-ink: oklch(16% 0.01 255);
+  --color-accent-quiet: oklch(27% 0.05 252);
+  --color-focus: oklch(72% 0.15 252);
 
-    --color-pass: oklch(72% 0.11 155);
-    --color-pass-quiet: oklch(26% 0.045 155);
-    --color-warn: oklch(78% 0.11 80);
-    --color-warn-quiet: oklch(27% 0.04 80);
-    --color-fail: oklch(70% 0.15 27);
-    --color-fail-quiet: oklch(27% 0.05 27);
+  --color-pass: oklch(72% 0.11 155);
+  --color-pass-quiet: oklch(26% 0.045 155);
+  --color-warn: oklch(78% 0.11 80);
+  --color-warn-quiet: oklch(27% 0.04 80);
+  --color-fail: oklch(70% 0.15 27);
+  --color-fail-quiet: oklch(27% 0.05 27);
 
-    --weight-body: 350;
-    --weight-medium: 480;
+  --weight-body: 350;
+  --weight-medium: 480;
 
-    --syntax-keyword: oklch(80% 0.11 285);
-    --syntax-string: oklch(82% 0.10 155);
-    --syntax-number: oklch(82% 0.10 60);
-    --syntax-comment: oklch(58% 0.012 255);
-    --syntax-function: oklch(80% 0.10 250);
-    --syntax-type: oklch(80% 0.08 205);
-    --syntax-variable: oklch(90% 0.006 255);
-    --syntax-operator: oklch(74% 0.03 265);
+  --syntax-keyword: oklch(80% 0.11 285);
+  --syntax-string: oklch(82% 0.10 155);
+  --syntax-number: oklch(82% 0.10 60);
+  --syntax-comment: oklch(58% 0.012 255);
+  --syntax-function: oklch(80% 0.10 250);
+  --syntax-type: oklch(80% 0.08 205);
+  --syntax-variable: oklch(90% 0.006 255);
+  --syntax-operator: oklch(74% 0.03 265);
 
-    --material-toolbar: oklch(19% 0.007 255 / 0.7);
-  }
+  --material-toolbar: oklch(19% 0.007 255 / 0.7);
 }
 
 /* Reduced transparency: make the material frostier rather than translucent. */
@@ -194,10 +193,8 @@
     --material-toolbar: oklch(99.3% 0.005 250);
     --material-blur: 0px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --material-toolbar: oklch(19% 0.007 255);
-    }
+  :root[data-theme='dark'] {
+    --material-toolbar: oklch(19% 0.007 255);
   }
 }
 
@@ -209,5 +206,13 @@
     --color-muted: oklch(38% 0.016 255);
     --color-faint: oklch(44% 0.014 255);
     --shadow-edge: 0 0 0 1px oklch(35% 0.02 250 / 0.6);
+  }
+
+  :root[data-theme='dark'] {
+    --color-rule: oklch(42% 0.012 255);
+    --color-hairline: oklch(54% 0.014 255);
+    --color-muted: oklch(82% 0.009 255);
+    --color-faint: oklch(74% 0.01 255);
+    --shadow-edge: 0 0 0 1px oklch(85% 0.01 255 / 0.7);
   }
 }

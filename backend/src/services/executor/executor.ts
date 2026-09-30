@@ -4,10 +4,14 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ExecutionLimits, ExecutionOutcome, TestCaseRun, ErrorType } from '../../domain/types.js';
+import type { SourceFile } from '../../domain/sourceFiles.js';
 import { classifyProcessOutcome, truncate } from '../evaluationService.js';
 
 export interface ExecuteRequest {
   code: string;
+  /** Optional C source/header files; `code` remains the backwards-compatible entry source. */
+  files?: SourceFile[];
+  entryFile?: string;
   /** Expected outputs travel with the request so the sandbox can judge in one pass. */
   testCases: Array<{ id: number; inputData: string; expectedOutput: string }>;
   limits: ExecutionLimits;

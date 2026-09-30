@@ -4,15 +4,18 @@ import { pinoHttp } from 'pino-http';
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFoundHandler } from './api/http.js';
-import { currentUser } from './api/middleware/currentUser.js';
 import { resolveUser } from './api/middleware/tokenAuth.js';
 import { authRouter } from './api/routes/auth.js';
+import { memoryTraceRouter } from './api/routes/memoryTrace.js';
+import { runCodeRouter } from './api/routes/runCode.js';
 import { aiRouter } from './api/routes/ai.js';
 import { healthRouter } from './api/routes/health.js';
 import { problemSetsRouter } from './api/routes/problemSets.js';
+import { publicBundlesRouter } from './api/routes/publicBundles.js';
 import { problemsRouter } from './api/routes/problems.js';
 import { submissionsRouter } from './api/routes/submissions.js';
 import { dashboardRouter } from './api/routes/dashboard.js';
+import { leaderboardSettingsRouter } from './api/routes/leaderboardSettings.js';
 import { adminRouter } from './api/routes/admin.js';
 
 export function createApp(): Express {
@@ -36,11 +39,16 @@ export function createApp(): Express {
 
   app.use('/api/health', healthRouter);
   app.use('/api/problem-sets', problemSetsRouter);
+  app.use('/api/public-bundles', publicBundlesRouter);
   app.use('/api/admin', adminRouter);
 
-  // Authentication is open (it resolves identity, it does not guard data),
-  // but /api/auth/me reads req.user — resolve identity there too.
-  app.use('/api/auth', resolveUser(), authRouter);
+  // Credential endpoints must be open: old clients can still send their legacy
+  // username bearer header, which must not block a password login. The auth router
+  // resolves identity only on user-scoped settings/profile routes.
+  app.use('/api/auth', authRouter);
+  app.use('/api/auth/leaderboard-settings', resolveUser(), leaderboardSettingsRouter);
+  app.use('/api/memory-trace', resolveUser(), memoryTraceRouter);
+  app.use('/api/run-code', resolveUser(), runCodeRouter);
 
   // Identity is only resolved where per-user data is needed. resolveUser is the
   // token-aware superset of the legacy currentUser stub.

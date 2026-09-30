@@ -5,7 +5,8 @@ import { generateProblemBundle, verifyTestCases } from '../../services/aiService
 import { logger } from '../../utils/logger.js';
 import { ApiError, asyncHandler, parseWith } from '../http.js';
 import { generateProblemSchema } from '../schemas.js';
-import { requireUser } from '../middleware/currentUser.js';
+import { requireAuthenticatedUser } from '../middleware/currentUser.js';
+import { resolveUser } from '../middleware/tokenAuth.js';
 
 export const adminRouter = Router();
 
@@ -13,9 +14,13 @@ export const adminRouter = Router();
  * Admin guard. The plan defers real auth; a shared secret keeps generation
  * (which spends API credits and mutates content) out of public reach.
  */
-adminRouter.use((req, _res, next) => {
+adminRouter.use(resolveUser(), (req, _res, next) => {
   if (config.http.adminToken.length === 0) {
     next(ApiError.serviceUnavailable('Admin API is disabled: set ADMIN_TOKEN to enable it.'));
+    return;
+  }
+  if (!req.sessionAuthenticated) {
+    next(ApiError.unauthorized('A valid signed-in session is required'));
     return;
   }
   if (req.header('x-admin-token') !== config.http.adminToken) {
@@ -29,6 +34,7 @@ adminRouter.use((req, _res, next) => {
 adminRouter.post(
   '/generate-problem',
   asyncHandler(async (req, res) => {
+    const user = requireAuthenticatedUser(req);
     const body = parseWith(generateProblemSchema, req.body, 'request body');
 
     const bundle = await generateProblemBundle({
@@ -37,9 +43,10 @@ adminRouter.post(
       testCaseCount: body.testCaseCount,
       publicTestCaseCount: body.publicTestCaseCount,
       offset: Date.now() % 97,
+      avoidTitles: (await repo.listPublicProblemSets({ limit: 200 })).map((set) => set.title),
     });
 
-    const verification = await verifyTestCases(bundle.problem, bundle.testCases);
+    const verification = await verifyTestCases(bundle.problem, bundle.testCases, bundle.helperFiles);
 
     if (!body.persist) {
       res.json({
@@ -61,10 +68,12 @@ adminRouter.post(
         examYear: body.examYear ?? null,
         examSemester: body.examSemester ?? null,
         difficulty: body.difficulty,
-        createdBy: requireUser(req).id,
+        userId: user.id,
       });
-    } else if (!(await repo.listProblemSets()).some((set) => set.id === problemSetId)) {
-      throw ApiError.badRequest(`Problem set ${problemSetId} does not exist`);
+    } else {
+      const access = await repo.problemSetAccess(problemSetId, user.id);
+      if (access === 'forbidden') throw ApiError.forbidden('You do not own this problem set');
+      if (access === 'not-found') throw ApiError.notFound(`Problem set ${problemSetId} does not exist`);
     }
 
     const problemId = await repo.createProblem({
@@ -79,6 +88,7 @@ adminRouter.post(
       aiGenerated: bundle.source !== 'offline',
       aiPromptParams: {
         provider: bundle.source,
+        helperFiles: bundle.helperFiles,
         difficulty: body.difficulty,
         topics: body.topics,
         generatedAt: new Date().toISOString(),

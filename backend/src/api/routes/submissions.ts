@@ -5,7 +5,8 @@ import { compareOutput, describeErrorType } from '../../services/evaluationServi
 import { enqueueSubmission } from '../../queue/index.js';
 import { ApiError, asyncHandler, parseWith } from '../http.js';
 import { createSubmissionSchema, idParamSchema, listSubmissionsQuerySchema } from '../schemas.js';
-import { requireUser } from '../middleware/currentUser.js';
+import { requireAuthenticatedUser } from '../middleware/currentUser.js';
+import { parseFilesPayload, validateFileSet } from '../../domain/sourceFiles.js';
 
 export const submissionsRouter = Router();
 
@@ -17,10 +18,21 @@ submissionsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const body = parseWith(createSubmissionSchema, req.body, 'request body');
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
 
-    const problem = await repo.findProblem(body.problemId);
+    const problem = await repo.findAccessibleProblem(body.problemId, user.id);
     if (!problem) throw ApiError.notFound(`Problem ${body.problemId} does not exist`);
+
+    const filePayload = body.files
+      ? { files: body.files, entryFile: body.entryFile ?? 'solution.c' }
+      : parseFilesPayload(body.code);
+    if (filePayload) {
+      try {
+        validateFileSet(filePayload.entryFile, filePayload.files);
+      } catch (error) {
+        throw ApiError.badRequest(error instanceof Error ? error.message : 'Invalid source file set');
+      }
+    }
 
     const testCases = await repo.listTestCases(problem.id);
     if (testCases.length === 0) {
@@ -30,7 +42,9 @@ submissionsRouter.post(
     const submissionId = await repo.createSubmission({
       userId: user.id,
       problemId: problem.id,
-      code: body.code,
+      code: filePayload
+        ? JSON.stringify({ __cPracticeFiles: 1, entryFile: filePayload.entryFile, files: filePayload.files })
+        : body.code,
     });
 
     await enqueueSubmission(submissionId);
@@ -47,7 +61,7 @@ submissionsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const { id } = parseWith(idParamSchema, req.params, 'path parameter');
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
     const submission = await repo.findSubmission(id);
     if (!submission) throw ApiError.notFound(`Submission ${id} does not exist`);
 
@@ -132,21 +146,33 @@ submissionsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const query = parseWith(listSubmissionsQuerySchema, req.query, 'query parameters');
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
 
     // History is always scoped to the requester. `mine` stays accepted (so old
     // bookmarks don't 400) but is ignored — `mine=false` used to expose every
     // student's submission ids and scores.
-    const submissions = await repo.listSubmissions({
+    const filters = {
       userId: user.id,
       problemId: query.problemId,
       status: query.status,
-      limit: query.limit ?? 25,
-      offset: query.offset ?? 0,
-    });
+      limit: query.limit,
+      offset: query.offset,
+    };
+    const [submissions, total] = await Promise.all([
+      repo.listSubmissions(filters),
+      repo.countSubmissions(filters),
+    ]);
+
+    const problemsById = new Map<number, Awaited<ReturnType<typeof repo.findProblem>>>();
+    await Promise.all(submissions.map(async (submission) => {
+      if (!problemsById.has(submission.problemId)) problemsById.set(submission.problemId, await repo.findProblem(submission.problemId));
+    }));
 
     res.json({
       count: submissions.length,
+      total,
+      limit: query.limit,
+      offset: query.offset,
       submissions: submissions.map((submission) => ({
         id: submission.id,
         problemId: submission.problemId,
@@ -157,6 +183,7 @@ submissionsRouter.get(
         executor: submission.executor,
         createdAt: submission.createdAt,
         completedAt: submission.completedAt,
+        tags: problemsById.get(submission.problemId)?.tags ?? [],
       })),
     });
   }),

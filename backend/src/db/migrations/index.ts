@@ -3,6 +3,8 @@ import { db, closeDb } from '../knex.js';
 import { logger } from '../../utils/logger.js';
 import * as init from './001_init.js';
 import * as userSettings from './002_user_settings.js';
+import * as bundleOwnership from './003_bundle_ownership.js';
+import * as leaderboardOptIn from './004_leaderboard_opt_in.js';
 
 /**
  * Minimal migration runner. The plan allows Flyway/Knex migrations; Knex's CLI is
@@ -12,6 +14,8 @@ import * as userSettings from './002_user_settings.js';
 export const MIGRATIONS: Array<{ name: string; up: (knex: Knex) => Promise<void>; down: (knex: Knex) => Promise<void> }> = [
   init,
   userSettings,
+  bundleOwnership,
+  leaderboardOptIn,
 ];
 
 const TRACKING_TABLE = 'schema_migrations';

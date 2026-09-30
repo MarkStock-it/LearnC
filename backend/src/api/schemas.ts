@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { config } from '../config.js';
 import { DIFFICULTIES, SUBMISSION_STATUSES } from '../domain/types.js';
+import { sourceFileSchema } from '../domain/sourceFiles.js';
 
 export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -11,11 +12,14 @@ export const listProblemsQuerySchema = z.object({
   difficulty: z.enum(DIFFICULTIES).optional(),
   tag: z.string().trim().min(1).max(40).optional(),
   search: z.string().trim().min(1).max(120).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
 
 export const createSubmissionSchema = z.object({
   problemId: z.coerce.number().int().positive(),
+  files: z.array(sourceFileSchema).min(1).max(20).optional(),
+  entryFile: z.string().max(80).optional(),
   code: z
     .string()
     .min(1, 'Code cannot be empty')
@@ -32,8 +36,8 @@ export const listSubmissionsQuerySchema = z.object({
     .union([z.literal('true'), z.literal('false'), z.boolean()])
     .transform((value) => value === true || value === 'true')
     .optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
 
 export const generateProblemSchema = z.object({
@@ -43,12 +47,13 @@ export const generateProblemSchema = z.object({
   examSemester: z.string().trim().max(10).optional(),
   difficulty: z.enum(DIFFICULTIES).default('medium'),
   topics: z.array(z.string().trim().min(1).max(40)).min(1).max(6),
-  testCaseCount: z.coerce.number().int().min(3).max(20).default(8),
+  excludeProblemIds: z.array(z.coerce.number().int().positive()).max(200).default([]),
+  testCaseCount: z.coerce.number().int().min(6).max(24).default(8),
   publicTestCaseCount: z.coerce.number().int().min(1).max(6).default(3),
   /** Optionally persist the generated problem instead of only returning it. */
   persist: z.boolean().default(true),
-  /** Per-request Gemini model override (e.g. gemini-2.5-flash-lite). */
-  geminiModel: z.string().trim().max(60).optional(),
+  /** Per-request Gemini model override. */
+  geminiModel: z.string().trim().regex(/^gemini-[a-z0-9.-]+$/i).max(60).optional(),
   /** Compact generation: one merged call instead of problem + cases. */
   compact: z.boolean().default(true),
   /** Practice-quiz customisation (shape of the generated problem). */

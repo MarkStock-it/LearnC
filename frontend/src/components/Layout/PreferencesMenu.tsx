@@ -5,7 +5,7 @@ const GEAR_PATH =
   'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z';
 
 interface PrefRow {
-  key: keyof Preferences;
+  key: Exclude<keyof Preferences, 'theme'>;
   label: string;
   desc: string;
 }
@@ -37,14 +37,20 @@ export function PreferencesMenu() {
   const [prefs, save] = usePreferences();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    const firstThemeButton = rootRef.current?.querySelector<HTMLButtonElement>('[aria-pressed]');
+    firstThemeButton?.focus();
     const onDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -58,9 +64,10 @@ export function PreferencesMenu() {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        aria-haspopup="true"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Preferences"
+        ref={triggerRef}
         onClick={() => setOpen((value) => !value)}
         className="flex size-8 items-center justify-center rounded-lg border border-[var(--color-rule)] bg-[var(--color-surface)] text-[var(--color-muted)] transition-colors"
       >
@@ -72,13 +79,33 @@ export function PreferencesMenu() {
 
       {open ? (
         <div
-          role="menu"
+          role="dialog"
           aria-label="Preferences"
-          className="absolute end-0 top-[calc(100%+8px)] z-[var(--z-dropdown)] w-[260px] rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-surface)] p-1.5 shadow-[0_8px_24px_oklch(20%_0.02_258_/_0.12)]"
+          aria-modal="false"
+          tabIndex={-1}
+          className="absolute end-0 top-[calc(100%+8px)] z-[var(--z-dropdown)] w-[280px] rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-surface)] p-1.5 shadow-[0_8px_24px_oklch(20%_0.02_258_/_0.12)]"
         >
           <h4 className="px-2.5 pb-1.5 pt-2 text-[10.5px] font-[var(--weight-strong)] uppercase tracking-[0.09em] text-[var(--color-muted)]">
             Preferences
           </h4>
+          <fieldset className="border-b border-[var(--color-rule)] px-2.5 pb-3 pt-1">
+            <legend className="type-small font-[var(--weight-medium)]">Appearance</legend>
+            <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-[var(--color-surface-2)] p-1" role="group" aria-label="Color theme">
+              {(['light', 'dark'] as const).map((theme) => (
+                <button
+                  key={theme}
+                  type="button"
+                  aria-pressed={prefs.theme === theme}
+                  onClick={() => save({ theme })}
+                  className={`min-h-11 rounded-md px-2 text-[var(--text-small)] capitalize transition-colors ${prefs.theme === theme ? 'bg-[var(--color-surface)] text-[var(--color-ink)] shadow-[var(--shadow-whisper)]' : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'}`}
+                >
+                  <span aria-hidden="true" className="me-1.5">{theme === 'light' ? '☼' : '☾'}</span>
+                  {theme}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[var(--text-micro)] text-[var(--color-muted)]">Choose the appearance used across the app.</p>
+          </fieldset>
           {ROWS.map((row) => (
             <label key={row.key} className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2">
               <input

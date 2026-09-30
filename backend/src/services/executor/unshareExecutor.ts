@@ -40,7 +40,7 @@ mkdir -p /tmp/work
 cd /tmp/work || exit 93
 
 echo "::START"
-gcc {COMPILER_FLAGS} -o /tmp/work/program {INPUTS_DIR}/code.c {LINK_FLAGS} > /tmp/work/compile.log 2>&1
+gcc {COMPILER_FLAGS} -o /tmp/work/program {SOURCE_FILES} {LINK_FLAGS} > /tmp/work/compile.log 2>&1
 compile_exit=$?
 echo "::COMPILE_EXIT $compile_exit"
 echo "::COMPILE_B64 $(head -c {MAX_OUTPUT_BYTES} /tmp/work/compile.log | base64 | tr -d '\\n')"
@@ -191,7 +191,14 @@ export class UnshareExecutor implements CodeExecutor {
       const inputsDir = path.join(scratch, 'inputs');
       const casesDir = path.join(inputsDir, 'cases');
       fs.mkdirSync(casesDir, { recursive: true });
-      fs.writeFileSync(path.join(inputsDir, 'code.c'), request.code, 'utf8');
+      const files = request.files?.length ? request.files : [{ filename: 'code.c', content: request.code }];
+      const entryFile = request.entryFile ?? 'code.c';
+      for (const file of files) fs.writeFileSync(path.join(inputsDir, file.filename), file.content, 'utf8');
+      const sourceFiles = files
+        .filter((file) => file.filename.toLowerCase().endsWith('.c') && (file.filename === entryFile || file.autoInclude !== false))
+        .sort((a, b) => Number(b.filename === entryFile) - Number(a.filename === entryFile))
+        .map((file) => `${inputsDir}/${file.filename}`)
+        .join(' ');
       for (const testCase of request.testCases) {
         fs.writeFileSync(path.join(casesDir, `${testCase.id}.in`), testCase.inputData, 'utf8');
       }
@@ -199,6 +206,7 @@ export class UnshareExecutor implements CodeExecutor {
       const runnerScript = RUNNER.replaceAll('{COMPILER_FLAGS}', config.executor.compilerFlags.join(' '))
         .replaceAll('{LINK_FLAGS}', config.executor.linkFlags.join(' '))
         .replaceAll('{INPUTS_DIR}', inputsDir)
+        .replaceAll('{SOURCE_FILES}', sourceFiles)
         .replaceAll('{MAX_OUTPUT_BYTES}', String(request.limits.maxOutputBytes))
         .replaceAll('{MEMORY_BYTES}', String(Math.round(request.limits.memoryLimitMb * 1024 * 1024)))
         .replaceAll('{CPU_SECONDS}', String(Math.max(request.limits.timeLimitMs / 1000, 1)))

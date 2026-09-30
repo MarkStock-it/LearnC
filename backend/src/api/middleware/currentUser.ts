@@ -5,53 +5,27 @@ import { ApiError } from '../http.js';
 declare module 'express-serve-static-core' {
   interface Request {
     user?: repo.UserRecord;
+    sessionAuthenticated?: boolean;
   }
 }
 
-/**
- * MVP identity resolution. The plan defers real auth (`JWT (optional for MVP)`,
- * with USC CAS integration later), so this resolves a user from:
- *   1. `x-user-id: <id>`
- *   2. `Authorization: Bearer <username>` (created on first use)
- *   3. otherwise the shared `guest` account
- * Every downstream query filters by `req.user.id`, so swapping in JWT later only
- * changes this middleware.
- */
+/** Legacy middleware name retained as a safe alias: headers and usernames are never identities. */
 export function currentUser(): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
-    void (async () => {
-      try {
-        const headerId = req.header('x-user-id');
-        if (headerId !== undefined) {
-          const id = Number.parseInt(headerId, 10);
-          if (!Number.isFinite(id)) throw ApiError.badRequest('x-user-id must be a number');
-          const user = await repo.findUser(id);
-          if (!user) throw ApiError.notFound(`User ${id} does not exist`);
-          req.user = user;
-          next();
-          return;
-        }
-
-        const auth = req.header('authorization');
-        if (auth && auth.toLowerCase().startsWith('bearer ')) {
-          const username = auth.slice(7).trim();
-          if (username.length === 0) throw ApiError.unauthorized('Bearer token must carry a username');
-          req.user = await repo.ensureUser(username);
-          next();
-          return;
-        }
-
-        req.user = await repo.ensureUser('guest');
-        next();
-      } catch (error) {
-        next(error);
-      }
-    })();
+    req.user = undefined;
+    req.sessionAuthenticated = false;
+    next();
   };
 }
 
-/** Route helper: `currentUser()` guarantees this, but keeps types honest. */
+/** Route helper for signed-in identity; it never manufactures a shared guest user. */
 export function requireUser(req: Request): repo.UserRecord {
-  if (!req.user) throw ApiError.unauthorized('No user resolved for this request');
+  if (!req.user) throw ApiError.unauthorized('A valid signed-in session is required');
   return req.user;
+}
+
+/** User-owned content requires a verified signed session, not guest or legacy identity. */
+export function requireAuthenticatedUser(req: Request): repo.UserRecord {
+  if (!req.sessionAuthenticated) throw ApiError.unauthorized('A valid signed-in session is required');
+  return requireUser(req);
 }

@@ -58,13 +58,20 @@ export class LocalExecutor implements CodeExecutor {
     const binaryFile = path.join(scratch, isWindows ? 'program.exe' : 'program');
 
     try {
-      fs.writeFileSync(sourceFile, request.code, 'utf8');
+      const files = request.files?.length ? request.files : [{ filename: 'code.c', content: request.code }];
+      const entryFile = request.entryFile ?? 'code.c';
+      for (const file of files) fs.writeFileSync(path.join(scratch, file.filename), file.content, 'utf8');
+      if (!files.some((file) => file.filename === entryFile)) fs.writeFileSync(sourceFile, request.code, 'utf8');
+      const sourceFiles = files
+        .filter((file) => file.filename.toLowerCase().endsWith('.c') && (file.filename === entryFile || file.autoInclude !== false))
+        .sort((a, b) => Number(b.filename === entryFile) - Number(a.filename === entryFile))
+        .map((file) => path.join(scratch, file.filename));
 
       const compile = await runProcess({
         command: this.compiler.command,
         args: [
           ...config.executor.compilerFlags,
-          sourceFile,
+          ...sourceFiles,
           '-o',
           binaryFile,
           ...config.executor.linkFlags,

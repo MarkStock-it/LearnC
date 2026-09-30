@@ -4,6 +4,7 @@ import * as repo from '../db/repositories.js';
 import type { ExecutionLimits } from '../domain/types.js';
 import { logger } from '../utils/logger.js';
 import { getExecutor } from './executor/index.js';
+import { parseFilesPayload } from '../domain/sourceFiles.js';
 
 /** Derive the sandbox envelope from the problem's own constraints, clamped by config. */
 function resolveLimits(constraints: { time_limit_seconds?: number; memory_limit_mb?: number }): ExecutionLimits {
@@ -56,8 +57,10 @@ export async function processSubmission(submissionId: number): Promise<void> {
   const { executor, kind } = await getExecutor();
   await repo.updateSubmission(submissionId, { status: 'EXECUTING', executor: kind });
 
+  const filePayload = parseFilesPayload(submission.code);
   const outcome = await executor.execute({
-    code: submission.code,
+    code: filePayload?.files.find((file) => file.filename === filePayload.entryFile)?.content ?? submission.code,
+    ...(filePayload ? { files: filePayload.files, entryFile: filePayload.entryFile } : {}),
     testCases: testCases.map((testCase) => ({
       id: testCase.id,
       inputData: testCase.inputData,

@@ -4,8 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8f9fb" />
+    <script>
+      try {
+        const prefs = JSON.parse(localStorage.getItem('c-practice.prefs') || '{}');
+        if (prefs.theme === 'dark') {
+          document.documentElement.dataset.theme = 'dark';
+          document.querySelector('meta[name="theme-color"]').content = '#191b20';
+        }
+      } catch { /* Start in light mode when saved preferences are unavailable. */ }
+    </script>
     <title>C Practice — exam problems, graded</title>
     <meta
       name="description"

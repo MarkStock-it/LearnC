@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, type SubmissionResponse } from '../services/api';
+import { api, getQueryIdentity, type RunCodeResponse, type SubmissionResponse } from '../services/api';
 import { useCodeSubmission } from '../hooks/useCodeSubmission';
 import { CodeEditor } from '../components/Editor/CodeEditor';
 import { ProblemStatement } from '../components/ProblemView/ProblemStatement';
@@ -65,16 +65,17 @@ export function PracticePage() {
   const id = Number(problemId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const identity = getQueryIdentity();
 
   const problemQuery = useQuery({
-    queryKey: ['problem', id],
+    queryKey: ['problem', identity, id],
     queryFn: () => api.problem(id),
     enabled: Number.isFinite(id),
   });
 
   // Shares the dashboard's cache entry, so the breadcrumb can name the real parent
   // set instead of a generic label.
-  const setsQuery = useQuery({ queryKey: ['problemSets'], queryFn: api.problemSets });
+  const setsQuery = useQuery({ queryKey: ['problemSets', identity], queryFn: () => api.problemSets() });
 
   const [code, setCode] = useState(SKELETON);
   const { phase, detail, liveStatus, error, elapsedMs, submit, reset } = useCodeSubmission(id);
@@ -82,6 +83,11 @@ export function PracticePage() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(true);
   const [testsOpen, setTestsOpen] = useState(true);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [runStdin, setRunStdin] = useState('');
+  const [runResult, setRunResult] = useState<RunCodeResponse | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [runningCode, setRunningCode] = useState(false);
 
   /**
    * Restore in-progress work once per problem.
@@ -98,6 +104,9 @@ export function PracticePage() {
 
     const saved = window.localStorage.getItem(codeKey(id));
     setCode(saved && saved.trim().length > 0 ? saved : SKELETON);
+    setRunStdin(problemQuery.data.problem.sampleInput ?? problemQuery.data.problem.publicTestCases[0]?.inputData ?? '');
+    setRunResult(null);
+    setRunError(null);
     reset();
   }, [id, problemQuery.data, reset]);
 
@@ -108,11 +117,25 @@ export function PracticePage() {
 
   const runTests = async () => {
     await submit(code);
-    void queryClient.invalidateQueries({ queryKey: ['problem', id] });
-    void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-    void queryClient.invalidateQueries({ queryKey: ['submissions'] });
+    void queryClient.invalidateQueries({ queryKey: ['problem', identity, id] });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard', identity] });
+    void queryClient.invalidateQueries({ queryKey: ['submissions', identity] });
     // The student just asked for a verdict — make sure the panel that shows it is open.
     setTestsOpen(true);
+  };
+
+  const runCode = async () => {
+    setConsoleOpen(true);
+    setRunningCode(true);
+    setRunResult(null);
+    setRunError(null);
+    try {
+      setRunResult(await api.runCode(id, code, runStdin));
+    } catch (runRequestError) {
+      setRunError(runRequestError instanceof Error ? runRequestError.message : 'Could not run this code.');
+    } finally {
+      setRunningCode(false);
+    }
   };
 
   if (!Number.isFinite(id)) {
@@ -135,18 +158,19 @@ export function PracticePage() {
   const problemSetTitle =
     setsQuery.data?.problemSets.find((entry) => entry.id === problem.problemSetId)?.title ?? 'Problem set';
   const running = phase === 'running';
+  const codeBusy = running || runningCode;
   const focusMode = !activityOpen && !testsOpen;
 
   return (
-    <div
-      className="flex min-h-[calc(100dvh-3.5rem)] flex-col px-3 pb-3 pt-3"
-      /* Break out of the app shell's centered max-width: the three-panel workbench
-       * is a full-viewport instrument. The calc recentres on the viewport, cancelling
-       * the shell's max-width and side padding in one move. */
-      style={{ marginLeft: 'calc(50% - 50vw)', marginRight: 'calc(50% - 50vw)', width: '100vw' }}
-    >
+    <div className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3">
       <StickyNotes />
-      <MemoryViz open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <MemoryViz
+        open={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        problemId={id}
+        code={code}
+        stdin={problemQuery.data.problem.publicTestCases[0]?.inputData ?? ''}
+      />
 
       {/* — Unified container: top bar + three panels — */}
       <div
@@ -201,7 +225,7 @@ export function PracticePage() {
               type="button"
               aria-label="Reset code to the skeleton"
               title="Reset code"
-              disabled={running}
+              disabled={codeBusy}
               onClick={() => {
                 reset();
                 updateCode(SKELETON);
@@ -234,10 +258,10 @@ export function PracticePage() {
          * zero, while the editor's flex-1 absorbs the freed space — one continuous
          * motion, no unmount pop. Content fades and slides as its box collapses.
          */}
-        <div className="relative flex min-h-0 flex-1 gap-2 px-2 pb-2">
+        <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2">
           {/* Activity panel (left) */}
           <aside
-            className="relative flex-none overflow-visible"
+            className="relative h-full min-h-0 flex-none overflow-visible"
             style={{
               width: activityOpen ? 'min(340px, 30vw)' : '0px',
               transition: `width 300ms ${PANEL_EASE}`,
@@ -247,7 +271,7 @@ export function PracticePage() {
           >
             <EdgeToggle side="left" open={activityOpen} onClick={() => setActivityOpen((v) => !v)} />
             <div
-              className="h-full overflow-y-auto rounded-[16px] bg-[var(--color-paper)] p-[var(--space-lg)]"
+              className="h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-[16px] bg-[var(--color-paper)] p-[var(--space-lg)]"
               style={{
                 width: activityOpen ? 'min(340px, 30vw)' : '0px',
                 opacity: activityOpen ? 1 : 0,
@@ -263,7 +287,7 @@ export function PracticePage() {
            * as a sibling's width animates, the flexbox resolves the remainder every
            * frame, so the editor expands and contracts in lockstep. */}
           <section
-            className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--color-surface-2)]"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--color-surface-2)]"
             aria-label="Your solution"
           >
             <div className="flex flex-none items-center gap-2 px-3 py-1.5">
@@ -283,15 +307,78 @@ export function PracticePage() {
             </div>
 
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-              <CodeEditor value={code} onChange={updateCode} readOnly={running} />
+              <CodeEditor value={code} onChange={updateCode} readOnly={codeBusy} />
             </div>
 
+            {consoleOpen ? (
+              <section id="run-console" aria-label="Run code console" className="flex max-h-[45%] min-h-[180px] flex-none flex-col gap-2 overflow-y-auto border-t border-[var(--color-rule)] bg-[var(--color-surface)] px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="mono type-micro">stdin</span>
+                  <span className="type-micro text-[var(--color-muted)]">Sandboxed single run · not graded or saved</span>
+                  <button type="button" className="btn btn-quiet ms-auto min-h-7 px-2 text-xs" onClick={() => setConsoleOpen(false)} aria-label="Close run code console">
+                    Close
+                  </button>
+                </div>
+                <textarea
+                  aria-label="Program input (stdin)"
+                  className="field min-h-16 w-full resize-y font-mono text-xs leading-5"
+                  value={runStdin}
+                  onChange={(event) => setRunStdin(event.target.value)}
+                  placeholder="Type input for your program…"
+                  spellCheck={false}
+                  disabled={runningCode}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="btn btn-primary min-h-8 px-3 text-xs" onClick={runCode} disabled={codeBusy || code.trim().length === 0}>
+                    {runningCode ? 'Running…' : 'Run code'}
+                  </button>
+                  {runningCode ? <span className="type-micro text-[var(--color-muted)]" role="status">Compiling and running one time…</span> : null}
+                  {runResult ? (
+                    <span className={`type-micro ${runResult.status === 'completed' ? 'text-[var(--color-pass)]' : 'text-[var(--color-fail)]'}`} role="status">
+                      {runResult.status.replace('_', ' ')}{runResult.runtimeMs !== null ? ` · ${runResult.runtimeMs} ms` : ''}
+                    </span>
+                  ) : null}
+                </div>
+                {runError ? <p className="type-micro text-[var(--color-fail)]" role="alert">Run failed: {runError}</p> : null}
+                {runResult ? (
+                  <div className="grid min-h-0 gap-2 sm:grid-cols-2">
+                    {runResult.compilationError ? (
+                      <div className="sm:col-span-2">
+                        <p className="mono type-micro mb-1 text-[var(--color-fail)]">Compilation error</p>
+                        <pre className="mono max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-fail)]">{runResult.compilationError}</pre>
+                      </div>
+                    ) : null}
+                    <div>
+                      <p className="mono type-micro mb-1">stdout</p>
+                      <pre className="mono max-h-28 min-h-8 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs">{runResult.stdout || '(no output)'}</pre>
+                    </div>
+                    <div>
+                      <p className="mono type-micro mb-1">stderr</p>
+                      <pre className="mono max-h-28 min-h-8 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs">{runResult.stderr || '(no errors)'}</pre>
+                    </div>
+                    {!runResult.compilationError && runResult.compilerOutput ? (
+                      <div className="sm:col-span-2">
+                        <p className="mono type-micro mb-1">Compiler output</p>
+                        <pre className="mono max-h-20 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs">{runResult.compilerOutput}</pre>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             <div className="flex flex-none flex-wrap items-center gap-1.5 border-t border-[var(--color-rule)] px-3 py-2">
-              <button type="button" className="btn btn-primary min-h-9 px-4 text-[13px]" onClick={runTests} disabled={running || code.trim().length === 0}>
+              <button type="button" className="btn btn-primary min-h-9 px-4 text-[13px]" onClick={runTests} disabled={codeBusy || code.trim().length === 0}>
                 {running ? 'Grading…' : 'Run tests'}
               </button>
+              <button type="button" className="btn btn-quiet min-h-9 px-3 text-[13px]" onClick={runCode} disabled={codeBusy || code.trim().length === 0}>
+                {runningCode ? 'Running…' : 'Run code'}
+              </button>
+              <button type="button" className="btn btn-quiet min-h-9 px-3 text-[13px]" onClick={() => setConsoleOpen((open) => !open)} disabled={codeBusy} aria-expanded={consoleOpen}>
+                {consoleOpen ? 'Hide terminal' : 'Terminal'}
+              </button>
               {detail ? (
-                <button type="button" className="btn btn-quiet min-h-9 px-3 text-[13px]" onClick={reset}>
+                <button type="button" className="btn btn-quiet min-h-9 px-3 text-[13px]" onClick={reset} disabled={codeBusy}>
                   Clear results
                 </button>
               ) : null}
@@ -301,7 +388,7 @@ export function PracticePage() {
 
           {/* Test cases panel (right) — mirrors the left panel's animation. */}
           <aside
-            className="relative flex-none overflow-visible"
+            className="relative h-full min-h-0 flex-none overflow-visible"
             style={{
               width: testsOpen ? 'min(380px, 32vw)' : '0px',
               transition: `width 300ms ${PANEL_EASE}`,
@@ -311,7 +398,7 @@ export function PracticePage() {
           >
             <EdgeToggle side="right" open={testsOpen} onClick={() => setTestsOpen((v) => !v)} />
             <div
-              className="flex h-full flex-col overflow-y-auto rounded-[16px] bg-[var(--color-paper)] p-[var(--space-md)]"
+              className="flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto overscroll-contain rounded-[16px] bg-[var(--color-paper)] p-[var(--space-md)]"
               style={{
                 width: testsOpen ? 'min(380px, 32vw)' : '0px',
                 opacity: testsOpen ? 1 : 0,
@@ -330,7 +417,7 @@ export function PracticePage() {
                   {prefs.executionStack ? <ExecutionStack detail={detail} /> : null}
                 </div>
               ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+                <div className="flex min-h-full flex-col items-center justify-center gap-2 text-center">
                   <p className="type-small text-[var(--color-muted)]">No results yet.</p>
                   <p className="type-micro max-w-[240px]">
                     Press Run tests — verdicts, inputs, expected outputs and diffs land here.

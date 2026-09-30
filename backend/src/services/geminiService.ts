@@ -6,6 +6,8 @@ import {
   type GeneratedTestCase,
 } from '../domain/problem.js';
 import type { GenerateOptions } from './aiService.js';
+import { problemHelperFileSchema, type ProblemHelperFile } from '../domain/sourceFiles.js';
+import { z } from 'zod';
 import { learnerIntentBlock, problemSystemPrompt, testCaseSystemPrompt } from './aiPrompts.js';
 
 /**
@@ -27,7 +29,15 @@ import { learnerIntentBlock, problemSystemPrompt, testCaseSystemPrompt } from '.
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
 /** Models where hidden thinking can be switched off via a budget of 0. */
-const THINKING_BUDGET_MODELS = [/^gemini-2\.5/, /^gemini-3\./];
+const GEMINI_25_MODELS = /^gemini-2\.5(?:-|$)/i;
+const GEMINI_3_MODELS = /^gemini-3\./i;
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const SUPPORTED_GEMINI_MODELS = new Set([
+  'gemini-3.8-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+]);
 
 interface GeminiResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -36,8 +46,9 @@ interface GeminiResponse {
 }
 
 function effectiveModel(override?: string): string {
-  const chosen = override?.trim() || config.ai.model;
-  return chosen.length > 0 ? chosen : 'gemini-2.5-flash-lite';
+  const configured = config.ai.model.trim();
+  const chosen = override?.trim() || (SUPPORTED_GEMINI_MODELS.has(configured) ? configured : DEFAULT_GEMINI_MODEL);
+  return chosen.length > 0 ? chosen : DEFAULT_GEMINI_MODEL;
 }
 
 async function callGemini(options: {
@@ -52,13 +63,18 @@ async function callGemini(options: {
   const model = effectiveModel(options.model);
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: options.maxTokens,
-    temperature: options.temperature ?? 0.7,
   };
+  // Gemini 3.6+ ignores custom sampling values; Gemini 3 is tuned for temperature 1.
+  if (!GEMINI_3_MODELS.test(model)) generationConfig.temperature = options.temperature ?? 0.7;
   if (options.responseSchema) {
     generationConfig.responseMimeType = 'application/json';
     generationConfig.responseSchema = options.responseSchema;
   }
-  if (THINKING_BUDGET_MODELS.some((pattern) => pattern.test(model))) {
+  if (GEMINI_3_MODELS.test(model)) {
+    // Gemini 3 accepts thinkingLevel; 2.5's thinkingBudget is not valid here.
+    generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+  } else if (GEMINI_25_MODELS.test(model) && !/flash-lite/i.test(model)) {
+    // Flash supports disabling thoughts with a 0 budget; unlike Pro it does not require 128+.
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
@@ -69,7 +85,7 @@ async function callGemini(options: {
       'x-goog-api-key': options.apiKey,
     },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: options.system }] },
+      systemInstruction: { parts: [{ text: options.system }] },
       contents: [{ role: 'user', parts: [{ text: options.userMessage }] }],
       generationConfig,
     }),
@@ -78,7 +94,15 @@ async function callGemini(options: {
 
   const data = (await response.json().catch(() => ({}))) as GeminiResponse;
   if (!response.ok) {
-    throw new Error(`Gemini API returned ${response.status}: ${data.error?.message?.slice(0, 200) ?? 'unknown error'}`);
+    const details = data.error?.message?.slice(0, 260) ?? 'unknown error';
+    if (response.status === 401 || (response.status === 403 && /api.?key|credential|permission/i.test(details))) {
+      throw new Error(`Gemini API rejected this API key (HTTP ${response.status}): ${details}. Re-enter a valid Gemini API key with Gemini API access enabled.`);
+    }
+    if (response.status === 400 || response.status === 403 || response.status === 404) {
+      throw new Error(`Gemini API rejected model ${model} (HTTP ${response.status}): ${details}. Check the model name and whether your key/project has access; Gemini 2.5 access is restricted for some accounts.`);
+    }
+    if (response.status === 429) throw new Error(`Gemini API rate limit/quota reached (HTTP 429): ${details}. Wait before retrying or choose the server provider.`);
+    throw new Error(`Gemini API returned ${response.status}: ${details}`);
   }
 
   const text = (data.candidates?.[0]?.content?.parts ?? [])
@@ -165,7 +189,7 @@ export async function generateWithGemini(
   apiKey: string,
   options: GenerateOptions,
   model?: string,
-): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase> }> {
+): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase>; helperFiles: ProblemHelperFile[] }> {
   const problemText = await callGemini({
     apiKey,
     model,
@@ -185,7 +209,34 @@ export async function generateWithGemini(
     responseSchema: testCasesResponseSchema,
   });
 
-  return { problem, testCases: finalizeCases(parseTestCases(testCaseText)) };
+  const testCases = finalizeCases(parseTestCases(testCaseText));
+  const helperFiles = await generateHelperFiles(apiKey, options, model, problem);
+  return { problem, testCases, helperFiles };
+}
+
+async function generateHelperFiles(
+  apiKey: string,
+  options: GenerateOptions,
+  model: string | undefined,
+  problem: GeneratedProblem,
+): Promise<ProblemHelperFile[]> {
+  const raw = await callGemini({
+    apiKey,
+    model,
+    system: 'Determine if a small reusable C utility would materially help with this problem. Return an empty helper_files array unless genuinely useful. Never include main(). Any helper must compile with the provided entry point and be useful in context. Return strict JSON only.',
+    userMessage: JSON.stringify({ problem, topics: options.topics }),
+    maxTokens: 1200,
+    responseSchema: {
+      type: 'object',
+      properties: { helper_files: { type: 'array', maxItems: 3, items: { type: 'object', properties: {
+        filename: { type: 'string' }, content: { type: 'string' }, language: { type: 'string', enum: ['c', 'h'] },
+        purpose: { type: 'string' }, autoInclude: { type: 'boolean' },
+      }, required: ['filename', 'content', 'language', 'purpose', 'autoInclude'] } } },
+      required: ['helper_files'],
+    },
+  });
+  const parsed = JSON.parse(raw) as { helper_files?: unknown };
+  return z.array(problemHelperFileSchema).max(3).parse(parsed.helper_files ?? []);
 }
 
 /**
@@ -197,16 +248,14 @@ export async function generateWithGeminiCompact(
   apiKey: string,
   options: GenerateOptions,
   model?: string,
-): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase> }> {
-  const hidden = Math.max(options.testCaseCount - options.publicTestCaseCount, 1);
-  const system = `You create exam-style C programming problems for second-year CS students. Output strictly valid JSON, nothing else. Be terse: the description is markdown but under 120 words; sample input/output are small (<= 6 numbers or <= 40 chars); the reference solution is minimal C99 with no comments. Integer arithmetic only; no floating point unless precision is stated. The reference_solution must compile with gcc -Wall -Wextra -std=c99 and exactly produce sample_output from sample_input.`;
+): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase>; helperFiles: ProblemHelperFile[] }> {
+  const system = `You create high-quality exam-style C99 problems for CS students. Output strict JSON only. Every problem needs a clear standalone title, rich markdown statement with at least two visible examples (each with explanation), notes/hints, exact input/output specifications, constraints, 2–3 relevant tags, a genuinely calibrated ${options.difficulty} difficulty, a correct reference solution, at least 2 public examples and at least 4 hidden edge/boundary cases. Provide a short structured statement with sections Overview, Input, Output, Constraints, Examples, Notes. Do not fabricate sample pairs or vague formats. Keep examples/test data consistent with the reference solution.`;
 
-  const userMessage = `Create ONE problem.
-difficulty: ${options.difficulty}
-topics: ${options.topics.join(', ')}
+  const userMessage = `Create ONE problem that genuinely requires: ${options.topics.join(', ')}.
+Difficulty target: ${options.difficulty}
 time limit seconds: 2
 memory limit MB: 256
-test cases: exactly ${options.testCaseCount} — the first ${options.publicTestCaseCount} public (is_public true, includes the sample pair), the remaining ${hidden} hidden edge/boundary cases. Each expected_output must be exactly reproducible from its input.${learnerIntentBlock(options)}
+test cases: exactly ${Math.max(options.testCaseCount, options.publicTestCaseCount + 4)} — at least two public examples and at least four hidden edge/boundary cases. Each expected_output must agree with the reference solution.${learnerIntentBlock(options)}
 JSON shape: {"title": string, "description": string, "constraints": {"time_limit_seconds": number, "memory_limit_mb": number, "input_format": string, "output_format": string, "sample_input": string, "sample_output": string}, "tags": string[2..3], "difficulty": "${options.difficulty}", "reference_solution": string, "test_cases": [{"input": string, "expected_output": string, "is_public": boolean, "description": string}]}`;
 
   const text = await callGemini({
@@ -221,8 +270,12 @@ JSON shape: {"title": string, "description": string, "constraints": {"time_limit
       properties: {
         ...(problemResponseSchema.properties as Record<string, unknown>),
         test_cases: (testCasesResponseSchema.properties as Record<string, unknown>).test_cases,
+        helper_files: { type: 'array', maxItems: 3, items: { type: 'object', properties: {
+          filename: { type: 'string' }, content: { type: 'string' }, language: { type: 'string', enum: ['c', 'h'] },
+          purpose: { type: 'string' }, autoInclude: { type: 'boolean' },
+        }, required: ['filename', 'content', 'language', 'purpose', 'autoInclude'] } },
       },
-      required: [...(problemResponseSchema.required as string[]), 'test_cases'],
+      required: [...(problemResponseSchema.required as string[]), 'test_cases', 'helper_files'],
     },
   });
 
@@ -236,6 +289,7 @@ JSON shape: {"title": string, "description": string, "constraints": {"time_limit
     difficulty: string;
     reference_solution: string;
     test_cases?: Array<GeneratedTestCase>;
+    helper_files?: unknown;
   };
 
   const problem = generatedProblemSchema.parse({
@@ -266,5 +320,5 @@ JSON shape: {"title": string, "description": string, "constraints": {"time_limit
         },
       ]);
 
-  return { problem, testCases };
+  return { problem, testCases, helperFiles: z.array(problemHelperFileSchema).max(3).parse(parsed.helper_files ?? []) };
 }

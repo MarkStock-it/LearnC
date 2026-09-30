@@ -1,22 +1,30 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { api } from '../services/api';
+import { api, getQueryIdentity } from '../services/api';
 import { StatusMark } from '../components/ui/StatusMark';
 import { revealDelay } from '../lib/reveal';
+import { Pagination } from '../components/ui/Pagination';
 
 export function SetPage() {
   const { setId } = useParams();
   const id = Number(setId);
+  const identity = getQueryIdentity();
+  const [problemsOffset, setProblemsOffset] = useState(0);
 
-  const sets = useQuery({ queryKey: ['problemSets'], queryFn: api.problemSets });
-  const problems = useQuery({
-    queryKey: ['problems', id],
-    queryFn: () => api.problems({ problemSetId: id }),
+  const set = useQuery({
+    queryKey: ['problemSet', identity, id],
+    queryFn: () => api.problemSet(id),
     enabled: Number.isFinite(id),
   });
-  const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
+  const problems = useQuery({
+    queryKey: ['problems', identity, id, problemsOffset],
+    queryFn: () => api.problems({ problemSetId: id, limit: 30, offset: problemsOffset }),
+    enabled: Number.isFinite(id),
+  });
+  const dashboard = useQuery({ queryKey: ['dashboard', identity], queryFn: api.dashboard });
 
-  const problemSet = sets.data?.problemSets.find((entry) => entry.id === id);
+  const problemSet = set.data?.problemSet;
   const solvedIds = new Set(dashboard.data?.stats.solvedProblemIds ?? []);
   const entries = problems.data?.problems ?? [];
   const solvedCount = entries.filter((problem) => solvedIds.has(problem.id)).length;
@@ -24,12 +32,12 @@ export function SetPage() {
   /* Only once the set list has actually arrived: before that, an unknown id is just
    * a set we have not heard about yet. Without this the page fell through to a
    * generic "Problem set" heading over an empty body. */
-  const missing = sets.isSuccess && !problemSet;
+  const missing = set.isError && (set.error as { status?: number })?.status === 404;
 
   return (
     <div className="flex flex-col gap-[var(--space-xl)]">
       <nav aria-label="Breadcrumb" className="type-micro reveal" style={revealDelay(0)}>
-        <Link to="/" className="link">
+        <Link to="/bundles/your" className="link">
           Problem sets
         </Link>
         <span className="mx-1.5">/</span>
@@ -47,6 +55,8 @@ export function SetPage() {
             Back to problem sets
           </Link>
         </section>
+      ) : set.isError ? (
+        <p role="alert" className="type-small text-[var(--color-fail)]">Could not load this problem set: {(set.error as Error).message}</p>
       ) : (
         <>
           <header className="reveal" style={revealDelay(1)}>
@@ -57,7 +67,7 @@ export function SetPage() {
             {/* Progress stacks below the title rather than beside it (gate 54). */}
             {entries.length > 0 ? (
               <p className="num type-small mt-[var(--space-sm)] text-[var(--color-muted)]">
-                {solvedCount} of {entries.length} solved
+                {solvedCount} of {entries.length} on this page solved · {problems.data?.total ?? problemSet?.problemCount ?? 0} total problems
               </p>
             ) : null}
           </header>
@@ -72,7 +82,7 @@ export function SetPage() {
             </p>
           ) : null}
 
-          {problems.isSuccess && entries.length === 0 ? (
+          {problems.isSuccess && problems.data.total === 0 ? (
             <p className="type-small text-[var(--color-muted)]">
               This set has no problems yet.
             </p>
@@ -114,6 +124,15 @@ export function SetPage() {
                 );
               })}
             </ul>
+          ) : null}
+          {problems.data ? (
+            <Pagination
+              total={problems.data.total}
+              limit={problems.data.limit}
+              offset={problems.data.offset}
+              onPageChange={setProblemsOffset}
+              label="problems"
+            />
           ) : null}
         </>
       )}

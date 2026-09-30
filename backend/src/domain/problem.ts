@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DIFFICULTIES } from './types.js';
+import { problemHelperFileSchema } from './sourceFiles.js';
 
 /** Constraint envelope stored on `problems.constraints` (plan §3.1). */
 export const problemConstraintsSchema = z.object({
@@ -38,6 +39,21 @@ export const generatedTestCaseSchema = z.object({
 
 export const generatedTestCasesSchema = z.object({
   test_cases: z.array(generatedTestCaseSchema).min(1).max(24),
+});
+
+export const generatedBundleSchema = generatedProblemSchema.extend({
+  test_cases: z.array(generatedTestCaseSchema).min(2).max(24),
+  helper_files: z.array(problemHelperFileSchema).max(5).default([]),
+});
+
+export const generationStageSchema = z.enum(['statement', 'test-cases', 'helper-files', 'validation', 'complete']);
+export type GenerationStage = z.infer<typeof generationStageSchema>;
+export const generationStageResultSchema = z.object({
+  stage: generationStageSchema,
+  status: z.enum(['complete', 'retrying', 'failed']),
+  attempt: z.number().int().positive().default(1),
+  retryInMs: z.number().int().nonnegative().optional(),
+  message: z.string().optional(),
 });
 
 export type GeneratedTestCase = z.infer<typeof generatedTestCaseSchema>;

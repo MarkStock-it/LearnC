@@ -35,11 +35,16 @@ interface DockerLike {
  * it working regardless of bind-mount ownership. Results come back as base64 lines
  * on stdout, so no tar/docker-cp plumbing is needed.
  */
-function buildRunnerScript(timeLimitSeconds: string, maxOutputBytes: number): string {
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function buildRunnerScript(timeLimitSeconds: string, maxOutputBytes: number, sourcePaths: string[]): string {
+  const sources = sourcePaths.map(shellQuote).join(' ');
   return `#!/bin/sh
 cd /work 2>/dev/null || { mkdir -p /work && cd /work; }
 echo "::START"
-gcc ${config.executor.compilerFlags.join(' ')} -o /work/program /inputs/code.c ${config.executor.linkFlags.join(' ')} > /work/compile.log 2>&1
+gcc ${config.executor.compilerFlags.join(' ')} -o /work/program ${sources} ${config.executor.linkFlags.join(' ')} > /work/compile.log 2>&1
 compile_exit=$?
 echo "::COMPILE_EXIT $compile_exit"
 echo "::COMPILE_B64 $(head -c ${maxOutputBytes} /work/compile.log | base64 | tr -d '\\n')"
@@ -163,10 +168,16 @@ export class DockerExecutor implements CodeExecutor {
     const scratch = createScratchDir();
     const casesDir = path.join(scratch, 'cases');
     fs.mkdirSync(casesDir, { recursive: true });
-    fs.writeFileSync(path.join(scratch, 'code.c'), request.code, 'utf8');
+    const files = request.files?.length ? request.files : [{ filename: 'code.c', content: request.code }];
+    const entryFile = request.entryFile ?? 'code.c';
+    for (const file of files) fs.writeFileSync(path.join(scratch, file.filename), file.content, 'utf8');
+    const sourcePaths = files
+      .filter((file) => file.filename.toLowerCase().endsWith('.c') && (file.filename === entryFile || file.autoInclude !== false))
+      .sort((a, b) => Number(b.filename === entryFile) - Number(a.filename === entryFile))
+      .map((file) => `/inputs/${file.filename}`);
     fs.writeFileSync(
       path.join(scratch, 'run.sh'),
-      buildRunnerScript((request.limits.timeLimitMs / 1000).toFixed(2), request.limits.maxOutputBytes),
+      buildRunnerScript((request.limits.timeLimitMs / 1000).toFixed(2), request.limits.maxOutputBytes, sourcePaths),
       'utf8',
     );
     for (const testCase of request.testCases) {

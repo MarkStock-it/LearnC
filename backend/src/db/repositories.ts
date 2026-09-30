@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 import { db, parseJsonColumn } from './knex.js';
+import { config } from '../config.js';
 import { truncate } from '../utils/text.js';
 import type {
   Difficulty,
@@ -64,6 +65,7 @@ export async function findUser(id: number): Promise<UserRecord | null> {
 
 export interface ProblemSetSummary {
   id: number;
+  userId: number | null;
   title: string;
   description: string | null;
   examYear: number | null;
@@ -71,27 +73,16 @@ export interface ProblemSetSummary {
   difficulty: Difficulty;
   problemCount: number;
   createdAt: string;
+  isPublic: boolean;
+  publishedAt: string | null;
+  creatorName: string | null;
+  firstProblemId: number | null;
 }
 
-export async function listProblemSets(): Promise<ProblemSetSummary[]> {
-  const rows = await db()('problem_sets as ps')
-    .leftJoin('problems as p', 'p.problem_set_id', 'ps.id')
-    .groupBy('ps.id', 'ps.title', 'ps.description', 'ps.exam_year', 'ps.exam_semester', 'ps.difficulty', 'ps.created_at')
-    .select(
-      'ps.id',
-      'ps.title',
-      'ps.description',
-      'ps.exam_year',
-      'ps.exam_semester',
-      'ps.difficulty',
-      'ps.created_at',
-    )
-    .count({ problemCount: 'p.id' })
-    .orderBy('ps.exam_year', 'desc')
-    .orderBy('ps.id', 'asc');
-
-  return rows.map((row: Record<string, unknown>) => ({
+function mapProblemSetRow(row: Record<string, unknown>): ProblemSetSummary {
+  return {
     id: Number(row.id),
+    userId: row.user_id === null || row.user_id === undefined ? null : Number(row.user_id),
     title: String(row.title),
     description: (row.description as string | null) ?? null,
     examYear: row.exam_year === null ? null : Number(row.exam_year),
@@ -99,7 +90,168 @@ export async function listProblemSets(): Promise<ProblemSetSummary[]> {
     difficulty: (row.difficulty as Difficulty) ?? 'medium',
     problemCount: Number(row.problemCount ?? 0),
     createdAt: String(row.created_at),
-  }));
+    isPublic: Boolean(row.is_public),
+    publishedAt: (row.published_at as string | null) ?? null,
+    creatorName: (row.creator_name as string | null) ?? null,
+    firstProblemId: row.first_problem_id === null || row.first_problem_id === undefined ? null : Number(row.first_problem_id),
+  };
+}
+
+const problemSetSelect = [
+  'ps.id', 'ps.user_id', 'ps.title', 'ps.description', 'ps.exam_year',
+  'ps.exam_semester', 'ps.difficulty', 'ps.created_at', 'ps.is_public',
+  'ps.published_at', 'u.username as creator_name',
+] as const;
+const publicProblemSetSelect = [
+  'ps.id', db().raw('NULL as user_id'), 'ps.title', 'ps.description', 'ps.exam_year',
+  'ps.exam_semester', 'ps.difficulty', 'ps.created_at', 'ps.is_public',
+  'ps.published_at', 'u.username as creator_name',
+] as const;
+
+/** A private-library query: explicitly requires the verified requester's owner ID. */
+type ProblemSetListFilters = {
+  search?: string;
+  difficulty?: Difficulty;
+  tag?: string;
+  limit?: number;
+  offset?: number;
+};
+
+function applyPrivateProblemSetFilters(query: Knex.QueryBuilder, filters: ProblemSetListFilters): void {
+  if (filters.search) query.where((builder) => builder.where('ps.title', 'like', `%${filters.search}%`).orWhere('ps.description', 'like', `%${filters.search}%`));
+  if (filters.difficulty) query.where('ps.difficulty', filters.difficulty);
+  if (filters.tag) {
+    if (config.db.client === 'mysql') {
+      query.whereExists(db()('problems as tag_problem').select(db().raw('1')).whereRaw('tag_problem.problem_set_id = ps.id').whereRaw('JSON_CONTAINS(tag_problem.tags, ?, ?)', [JSON.stringify(filters.tag), '$']));
+    } else if (config.db.client === 'pg') {
+      query.whereExists(db()('problems as tag_problem').select(db().raw('1')).whereRaw('tag_problem.problem_set_id = ps.id').whereRaw('jsonb_exists(tag_problem.tags::jsonb, ?)', [filters.tag]));
+    } else {
+      query.whereExists(db()('problems as tag_problem').select(db().raw('1')).whereRaw('tag_problem.problem_set_id = ps.id').whereRaw('exists (select 1 from json_each(tag_problem.tags) as tag_value where tag_value.value = ?)', [filters.tag]));
+    }
+  }
+}
+
+export async function listProblemSets(userId: number | null, page?: ProblemSetListFilters): Promise<ProblemSetSummary[]> {
+  const query = db()('problem_sets as ps')
+    .leftJoin('problems as p', 'p.problem_set_id', 'ps.id')
+    .leftJoin('users as u', 'u.id', 'ps.user_id')
+    .where('ps.orphaned', false);
+  if (userId === null) query.whereRaw('1 = 0');
+  else query.where('ps.user_id', userId);
+  if (page) applyPrivateProblemSetFilters(query, page);
+  query
+    .groupBy('ps.id', 'ps.user_id', 'ps.title', 'ps.description', 'ps.exam_year', 'ps.exam_semester', 'ps.difficulty', 'ps.created_at', 'ps.is_public', 'ps.published_at', 'u.username')
+    .select(...problemSetSelect)
+    .count({ problemCount: 'p.id' })
+    .min({ first_problem_id: 'p.id' })
+    .orderBy('ps.created_at', 'desc')
+    .orderBy('ps.id', 'desc');
+  if (page?.limit !== undefined) query.limit(page.limit);
+  if (page?.offset !== undefined) query.offset(page.offset);
+  const rows = await query;
+  return rows.map((row: Record<string, unknown>) => mapProblemSetRow(row));
+}
+
+export async function countProblemSets(userId: number | null, filters: ProblemSetListFilters = {}): Promise<number> {
+  if (userId === null) return 0;
+  const query = db()('problem_sets as ps').where({ 'ps.user_id': userId, 'ps.orphaned': false });
+  applyPrivateProblemSetFilters(query, filters);
+  const row = await query.countDistinct({ total: 'ps.id' }).first() as { total: number | string } | undefined;
+  return Number(row?.total ?? 0);
+}
+
+/** Add visibility-safe public bundle filters using JSON predicates supported by each DB. */
+function applyPublicProblemSetFilters(query: Knex.QueryBuilder, filters: {
+  search?: string; difficulty?: Difficulty; tag?: string;
+}): void {
+  query.where({ 'ps.is_public': true, 'ps.orphaned': false });
+  if (filters.search) query.where((builder) => builder.where('ps.title', 'like', `%${filters.search}%`).orWhere('ps.description', 'like', `%${filters.search}%`));
+  if (filters.difficulty) query.where('ps.difficulty', filters.difficulty);
+  if (filters.tag) {
+    if (config.db.client === 'mysql') {
+      query.whereExists(db()('problems as tag_problem').select(db().raw('1')).whereRaw('tag_problem.problem_set_id = ps.id').whereRaw('JSON_CONTAINS(tag_problem.tags, ?, ?)', [JSON.stringify(filters.tag), '$']));
+    } else if (config.db.client === 'pg') {
+      query.whereExists(db()('problems as tag_problem').select(db().raw('1')).whereRaw('tag_problem.problem_set_id = ps.id').whereRaw('jsonb_exists(tag_problem.tags::jsonb, ?)', [filters.tag]));
+    } else {
+      query.whereExists(
+        db()('problems as tag_problem')
+          .select(db().raw('1'))
+          .whereRaw('tag_problem.problem_set_id = ps.id')
+          .whereRaw('exists (select 1 from json_each(tag_problem.tags) as tag_value where tag_value.value = ?)', [filters.tag]),
+      );
+    }
+  }
+}
+
+/** Public bundles are an explicit, separate query and never leak private set data. */
+export async function listPublicProblemSets(filters: {
+  search?: string;
+  difficulty?: Difficulty;
+  tag?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<ProblemSetSummary[]> {
+  const query = db()('problem_sets as ps')
+    .leftJoin('problems as p', 'p.problem_set_id', 'ps.id')
+    .leftJoin('users as u', 'u.id', 'ps.published_by')
+    .modify((builder) => applyPublicProblemSetFilters(builder, filters))
+    .groupBy('ps.id', 'ps.title', 'ps.description', 'ps.exam_year', 'ps.exam_semester', 'ps.difficulty', 'ps.created_at', 'ps.is_public', 'ps.published_at', 'u.username')
+    .select(...publicProblemSetSelect)
+    .count({ problemCount: 'p.id' })
+    .min({ first_problem_id: 'p.id' })
+    .orderBy('ps.published_at', 'desc')
+    .orderBy('ps.id', 'desc')
+    .limit(filters.limit ?? 20)
+    .offset(filters.offset ?? 0);
+  const rows = (await query) as Array<Record<string, unknown>>;
+  return rows.map(mapProblemSetRow);
+}
+
+export async function countPublicProblemSets(filters: {
+  search?: string; difficulty?: Difficulty; tag?: string;
+} = {}): Promise<number> {
+  const query = db()('problem_sets as ps');
+  applyPublicProblemSetFilters(query, filters);
+  const row = await query.countDistinct({ total: 'ps.id' }).first() as { total: number | string } | undefined;
+  return Number(row?.total ?? 0);
+}
+
+export async function findProblemSet(id: number): Promise<ProblemSetSummary | null> {
+  const row = await db()('problem_sets as ps').leftJoin('users as u', 'u.id', 'ps.user_id')
+    .leftJoin('problems as p', 'p.problem_set_id', 'ps.id').where('ps.id', id)
+    .groupBy('ps.id', 'ps.user_id', 'ps.title', 'ps.description', 'ps.exam_year', 'ps.exam_semester', 'ps.difficulty', 'ps.created_at', 'ps.is_public', 'ps.published_at', 'u.username')
+    .select(...problemSetSelect).count({ problemCount: 'p.id' }).min({ first_problem_id: 'p.id' }).first() as Record<string, unknown> | undefined;
+  return row ? mapProblemSetRow(row) : null;
+}
+
+/** Public projection deliberately omits the creator's internal user ID. */
+export async function findPublicProblemSet(id: number): Promise<ProblemSetSummary | null> {
+  const row = await db()('problem_sets as ps').leftJoin('users as u', 'u.id', 'ps.published_by')
+    .leftJoin('problems as p', 'p.problem_set_id', 'ps.id')
+    .where({ 'ps.id': id, 'ps.is_public': true, 'ps.orphaned': false })
+    .groupBy('ps.id', 'ps.title', 'ps.description', 'ps.exam_year', 'ps.exam_semester', 'ps.difficulty', 'ps.created_at', 'ps.is_public', 'ps.published_at', 'u.username')
+    .select(...publicProblemSetSelect).count({ problemCount: 'p.id' }).min({ first_problem_id: 'p.id' }).first() as Record<string, unknown> | undefined;
+  return row ? mapProblemSetRow(row) : null;
+}
+
+export async function setProblemSetPublic(id: number, userId: number, isPublic: boolean): Promise<'updated' | 'not-found' | 'forbidden'> {
+  const conn = db();
+  const owned = await conn('problem_sets').where({ id, user_id: userId, orphaned: false }).first('id');
+  if (!owned) return (await conn('problem_sets').where({ id }).first('id')) ? 'forbidden' : 'not-found';
+  await conn('problem_sets').where({ id, user_id: userId }).update({
+    is_public: isPublic,
+    published_by: isPublic ? userId : null,
+    published_at: isPublic ? conn.fn.now() : null,
+  });
+  return 'updated';
+}
+
+export async function deleteOwnedProblemSet(id: number, userId: number): Promise<'deleted' | 'not-found' | 'forbidden'> {
+  const conn = db();
+  const owner = await conn('problem_sets').where({ id, user_id: userId, orphaned: false }).first('id');
+  if (!owner) return (await conn('problem_sets').where({ id }).first('id')) ? 'forbidden' : 'not-found';
+  await conn('problem_sets').where({ id, user_id: userId }).delete();
+  return 'deleted';
 }
 
 export async function createProblemSet(input: {
@@ -108,7 +260,7 @@ export async function createProblemSet(input: {
   examYear?: number | null;
   examSemester?: string | null;
   difficulty?: Difficulty;
-  createdBy?: number | null;
+  userId: number;
 }): Promise<number> {
   return insertReturningId(db(), 'problem_sets', {
     title: input.title,
@@ -116,7 +268,9 @@ export async function createProblemSet(input: {
     exam_year: input.examYear ?? null,
     exam_semester: input.examSemester ?? null,
     difficulty: input.difficulty ?? 'medium',
-    created_by: input.createdBy ?? null,
+    user_id: input.userId,
+    created_by: input.userId,
+    orphaned: false,
   });
 }
 
@@ -140,12 +294,14 @@ export interface ProblemRecord {
   difficulty: Difficulty;
   tags: string[];
   aiGenerated: boolean;
+  aiPromptParams: Record<string, unknown> | null;
   createdAt: string;
 }
 
 export interface ProblemListItem extends ProblemRecord {
   testCaseCount: number;
   publicTestCaseCount: number;
+  solved: boolean;
 }
 
 function mapProblemRow(row: Record<string, unknown>): ProblemRecord {
@@ -160,8 +316,24 @@ function mapProblemRow(row: Record<string, unknown>): ProblemRecord {
     difficulty: (row.difficulty_estimate as Difficulty) ?? 'medium',
     tags: parseJsonColumn<string[]>(row.tags, []),
     aiGenerated: Boolean(row.ai_generated),
+    aiPromptParams: parseJsonColumn<Record<string, unknown> | null>(row.ai_prompt_params, null),
     createdAt: String(row.created_at),
   };
+}
+
+export async function listPublicProblemsInSet(problemSetId: number, page?: { limit: number; offset: number }): Promise<ProblemRecord[]> {
+  const query = db()('problems as p').join('problem_sets as ps', 'ps.id', 'p.problem_set_id')
+    .where({ 'ps.id': problemSetId, 'ps.is_public': true, 'ps.orphaned': false })
+    .select('p.*').orderBy('p.id', 'asc');
+  if (page) query.limit(page.limit).offset(page.offset);
+  const rows = await query as Array<Record<string, unknown>>;
+  return rows.map(mapProblemRow);
+}
+
+export async function countPublicProblemsInSet(problemSetId: number): Promise<number> {
+  const row = await db()('problems as p').join('problem_sets as ps', 'ps.id', 'p.problem_set_id')
+    .where({ 'ps.id': problemSetId, 'ps.is_public': true, 'ps.orphaned': false }).count({ total: 'p.id' }).first() as { total: number | string } | undefined;
+  return Number(row?.total ?? 0);
 }
 
 export async function createProblem(input: {
@@ -195,41 +367,136 @@ export async function findProblem(id: number): Promise<ProblemRecord | null> {
   return row ? mapProblemRow(row) : null;
 }
 
-export async function listProblems(filters: {
+/** A student can open only their own private problem or an explicitly public one. */
+export async function findAccessibleProblem(id: number, userId: number | null): Promise<ProblemRecord | null> {
+  const query = db()('problems as p').join('problem_sets as ps', 'ps.id', 'p.problem_set_id')
+    .where('p.id', id).andWhere('ps.orphaned', false)
+    .andWhere((builder) => {
+      builder.where('ps.is_public', true);
+      if (userId !== null) builder.orWhere('ps.user_id', userId);
+    })
+    .select('p.*').first();
+  const row = await query as Record<string, unknown> | undefined;
+  return row ? mapProblemRow(row) : null;
+}
+
+export async function problemAccess(id: number, userId: number | null): Promise<'accessible' | 'forbidden' | 'not-found'> {
+  const row = await db()('problems as p').join('problem_sets as ps', 'ps.id', 'p.problem_set_id')
+    .where('p.id', id).first('ps.user_id', 'ps.is_public', 'ps.orphaned') as { user_id: number | null; is_public: boolean; orphaned: boolean } | undefined;
+  if (!row || row.orphaned) return 'not-found';
+  if (row.is_public || (userId !== null && Number(row.user_id) === userId)) return 'accessible';
+  return 'forbidden';
+}
+
+export async function problemSetAccess(id: number, userId: number | null): Promise<'owned' | 'public' | 'forbidden' | 'not-found'> {
+  const row = await db()('problem_sets').where({ id }).first('user_id', 'is_public', 'orphaned') as { user_id: number | null; is_public: boolean; orphaned: boolean } | undefined;
+  if (!row || row.orphaned) return 'not-found';
+  if (row.is_public) return 'public';
+  if (userId !== null && Number(row.user_id) === userId) return 'owned';
+  return 'forbidden';
+}
+
+type ProblemListFilters = {
+  userId: number | null;
   problemSetId?: number;
   difficulty?: Difficulty;
   tag?: string;
   search?: string;
   limit?: number;
-} = {}): Promise<ProblemListItem[]> {
+  offset?: number;
+  isPublicSet?: boolean;
+};
+
+function buildProblemsQuery(filters: ProblemListFilters): Knex.QueryBuilder {
   const query = db()('problems')
-    .select(
-      'problems.*',      db().raw(
-        '(select count(*) from test_cases where test_cases.problem_id = problems.id) as test_case_count',
-      ),
-      // `is_public` is a native boolean on Postgres and an integer on SQLite; a bare
-      // truthiness check is the one form both dialects accept.
-      db().raw(
-        '(select count(*) from test_cases where test_cases.problem_id = problems.id and test_cases.is_public) as public_test_case_count',
-      ),
-    )
-    .orderBy('problems.id', 'asc');
+    .join('problem_sets as ps', 'ps.id', 'problems.problem_set_id')
+    .where('ps.orphaned', false)
+    .andWhere((builder) => {
+      if (filters.problemSetId !== undefined && filters.isPublicSet) {
+        builder.where('ps.is_public', true);
+      } else if (filters.problemSetId !== undefined) {
+        if (filters.userId !== null) builder.where({ 'ps.user_id': filters.userId, 'ps.is_public': false });
+        else builder.whereRaw('1 = 0');
+      } else if (filters.userId !== null) {
+        builder.where((access) => access.where('ps.user_id', filters.userId!).orWhere('ps.is_public', true));
+      } else {
+        builder.where('ps.is_public', true);
+      }
+    });
 
   if (filters.problemSetId !== undefined) query.where('problems.problem_set_id', filters.problemSetId);
   if (filters.difficulty) query.where('problems.difficulty_estimate', filters.difficulty);
   if (filters.search) query.where('problems.title', 'like', `%${filters.search}%`);
-  if (filters.limit) query.limit(filters.limit);
+  if (filters.tag) {
+    if (config.db.client === 'mysql') query.whereRaw('JSON_CONTAINS(??, ?, ?)', ['problems.tags', JSON.stringify(filters.tag), '$']);
+    else if (config.db.client === 'pg') query.whereRaw('jsonb_exists(??::jsonb, ?)', ['problems.tags', filters.tag]);
+    else query.whereExists(db().select(db().raw('1')).from(db().raw('json_each(problems.tags) AS tag_value')).whereRaw('tag_value.value = ?', [filters.tag]));
+  }
+  return query;
+}
 
-  const rows = (await query) as Array<Record<string, unknown>>;
-  // Tag matching happens in JS: tags live in a JSON column, and the dialect-specific
-  // operators (pg `?|` vs JSON1 `json_each`) are not worth the divergence here.
-  const mapped = rows.map((row) => ({
+export async function listProblems(filters: ProblemListFilters): Promise<ProblemListItem[]> {
+  const query = buildProblemsQuery(filters)
+    .select(
+      'problems.*',
+      db().raw('(select count(*) from test_cases where test_cases.problem_id = problems.id) as test_case_count'),
+      db().raw('(select count(*) from test_cases where test_cases.problem_id = problems.id and test_cases.is_public) as public_test_case_count'),
+      filters.userId === null
+        ? db().raw('0 as solved')
+        : db().raw('case when exists (select 1 from submissions ss where ss.user_id = ? and ss.problem_id = problems.id and ss.status = ? and ss.passed_count > 0 and ss.passed_count = ss.total_count) then 1 else 0 end as solved', [filters.userId, 'COMPLETED']),
+    )
+    .orderBy('problems.id', 'asc');
+  if (filters.limit !== undefined) query.limit(filters.limit);
+  if (filters.offset !== undefined) query.offset(filters.offset);
+  const rows = await query as Array<Record<string, unknown>>;
+  return rows.map((row) => ({
     ...mapProblemRow(row),
     testCaseCount: Number(row.test_case_count ?? 0),
     publicTestCaseCount: Number(row.public_test_case_count ?? 0),
+    solved: Boolean(row.solved),
   }));
+}
 
-  return filters.tag ? mapped.filter((problem) => problem.tags.includes(filters.tag!)) : mapped;
+export async function countProblems(filters: ProblemListFilters): Promise<number> {
+  const row = await buildProblemsQuery(filters)
+    .countDistinct({ total: 'problems.id' }).first() as { total: number | string } | undefined;
+  return Number(row?.total ?? 0);
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  solvedProblems: number;
+}
+
+export async function listLeaderboard(page: { limit: number; offset: number }): Promise<LeaderboardEntry[]> {
+  const rows = await db()('user_settings as settings')
+    .join('users as u', 'u.id', 'settings.user_id')
+    .where('settings.leaderboard_public', true)
+    .select(
+      'u.username',
+      db().raw(`(
+        select count(distinct solved.problem_id)
+        from submissions as solved
+        where solved.user_id = u.id
+          and solved.status = ?
+          and solved.passed_count > 0
+          and solved.passed_count = solved.total_count
+      ) as solvedProblems`, ['COMPLETED']),
+    )
+    .orderBy('solvedProblems', 'desc')
+    .orderBy('u.username', 'asc')
+    .limit(page.limit)
+    .offset(page.offset) as Array<{ username: string; solvedProblems: number | string }>;
+  return rows.map((row, index) => ({ rank: page.offset + index + 1, username: row.username, solvedProblems: Number(row.solvedProblems) }));
+}
+
+export async function countLeaderboardEntries(): Promise<number> {
+  const row = await db()('user_settings as settings')
+    .join('users as u', 'u.id', 'settings.user_id')
+    .where('settings.leaderboard_public', true)
+    .countDistinct({ total: 'u.id' }).first() as { total: number | string } | undefined;
+  return Number(row?.total ?? 0);
 }
 
 export async function insertTestCases(
@@ -463,13 +730,24 @@ export async function getUserProblemProgress(
   };
 }
 
-export async function listSubmissions(filters: {
+type SubmissionListFilters = {
   userId?: number;
   problemId?: number;
   status?: SubmissionStatus;
   limit?: number;
   offset?: number;
-}): Promise<Array<SubmissionRecord & { problemTitle: string }>> {
+};
+
+export async function countSubmissions(filters: SubmissionListFilters): Promise<number> {
+  const query = db()('submissions as s');
+  if (filters.userId !== undefined) query.where('s.user_id', filters.userId);
+  if (filters.problemId !== undefined) query.where('s.problem_id', filters.problemId);
+  if (filters.status) query.where('s.status', filters.status);
+  const row = await query.count({ total: 's.id' }).first() as { total: number | string } | undefined;
+  return Number(row?.total ?? 0);
+}
+
+export async function listSubmissions(filters: SubmissionListFilters): Promise<Array<SubmissionRecord & { problemTitle: string }>> {
   const query = db()('submissions as s')
     .join('problems as p', 'p.id', 's.problem_id')
     .select('s.*', 'p.title as problem_title')

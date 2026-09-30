@@ -8,15 +8,17 @@
  * comes from the sandbox.
  */
 
+export type LintSeverity = 'error' | 'warning';
+
 export interface LintProblem {
   line: number;
+  severity: LintSeverity;
   message: string;
 }
 
 export interface LintDiagnostic {
   line: number;
-  /** gcc's own words for the severity level. */
-  severity: 'error';
+  severity: LintSeverity;
   message: string;
   /** The plain-language fix, rendered after an em dash. */
   fix: string;
@@ -85,10 +87,11 @@ export function lintC(source: string): LintDiagnostic[] {
       } else if (CLOSERS.includes(ch)) {
         const open = stack.pop();
         if (!open) {
-          problems.push({ line: lineIndex + 1, message: `unmatched "${ch}"` });
+          problems.push({ line: lineIndex + 1, severity: 'error', message: `unmatched "${ch}"` });
         } else if (MATCH[open.ch] !== ch) {
           problems.push({
             line: lineIndex + 1,
+            severity: 'error',
             message: `expected "${MATCH[open.ch]}" to close "${open.ch}" from line ${open.line}, found "${ch}"`,
           });
         }
@@ -101,7 +104,7 @@ export function lintC(source: string): LintDiagnostic[] {
   }
 
   for (const open of stack) {
-    problems.push({ line: open.line, message: `unclosed "${open.ch}"` });
+    problems.push({ line: open.line, severity: 'error', message: `unclosed "${open.ch}"` });
   }
 
   // Statement terminators: a non-empty line that is not a brace, preprocessor,
@@ -113,28 +116,46 @@ export function lintC(source: string): LintDiagnostic[] {
     if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
     if (/[;{}:,]$/.test(trimmed)) return;
     if (/^(if|else|for|while|do|switch|case)\b/.test(trimmed)) return;
-    problems.push({ line: index + 1, message: 'expected ";" at end of statement' });
+    problems.push({ line: index + 1, severity: 'error', message: 'expected ";" at end of statement' });
   });
 
-  problems.sort((a, b) => a.line - b.line);
+  // A simple assignment as the whole condition is legal C, but often a typo for ==.
+  // Keep this as a yellow suggestion, not a red syntax error, so intentional uses remain possible.
+  lines.forEach((line, index) => {
+    if (/^\s*(if|while)\s*\(\s*[A-Za-z_]\w*\s*=(?!=)/.test(line)) {
+      problems.push({
+        line: index + 1,
+        severity: 'warning',
+        message: 'assignment used as the condition',
+      });
+    }
+  });
 
-  // gcc reports the first error per region loudest; showing every repeat would bury
-  // the one that matters. Three lines, plus a count of the rest.
-  const seen = new Set<number>();
-  const diagnostics: LintDiagnostic[] = [];
+  problems.sort((a, b) => {
+    if (a.line !== b.line) return a.line - b.line;
+    if (a.severity === b.severity) return 0;
+    return a.severity === 'error' ? -1 : 1;
+  });
+
+  // Report at most three distinct lines, preferring an error if a line has multiple hints.
+  const byLine = new Map<number, LintProblem>();
   for (const problem of problems) {
+    if (!byLine.has(problem.line)) byLine.set(problem.line, problem);
+  }
+  const diagnostics: LintDiagnostic[] = [];
+  for (const problem of byLine.values()) {
     if (diagnostics.length >= 3) break;
-    if (seen.has(problem.line)) continue;
-    seen.add(problem.line);
     diagnostics.push({
       line: problem.line,
-      severity: 'error',
+      severity: problem.severity,
       message: problem.message,
-      fix: problem.message.includes(';')
-        ? 'add ";" at the end of the statement'
-        : problem.message.startsWith('unclosed')
-          ? 'close it before the function ends'
-          : 'balance the brackets',
+      fix: problem.severity === 'warning'
+        ? 'check whether you meant to compare with =='
+        : problem.message.includes(';')
+          ? 'add ";" at the end of the statement'
+          : problem.message.startsWith('unclosed')
+            ? 'close it before the function ends'
+            : 'balance the brackets',
     });
   }
 

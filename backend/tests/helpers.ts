@@ -34,14 +34,14 @@ export async function seedFixture(bankKey = 'array-sum'): Promise<Fixture> {
   const bank = findBankProblem(bankKey);
   if (!bank) throw new Error(`Unknown bank problem: ${bankKey}`);
 
-  const user = await repo.ensureUser('fixture-instructor', 'fixture@example.edu');
+  const user = await repo.ensureUser('guest', 'guest@example.edu');
   const problemSetId = await repo.createProblemSet({
     title: `Fixture set (${bank.key})`,
     description: 'Created by the test suite',
     examYear: 2024,
     examSemester: 'test',
     difficulty: bank.difficulty,
-    createdBy: user.id,
+    userId: user.id,
   });
 
   const problemId = await repo.createProblem({

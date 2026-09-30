@@ -45,6 +45,7 @@ export interface UserSettingsRecord {
   hasPassword: boolean;
   hasGeminiKey: boolean;
   aiProvider: 'server' | 'gemini';
+  leaderboardPublic: boolean;
 }
 
 interface UserSettingsRow {
@@ -52,6 +53,7 @@ interface UserSettingsRow {
   password_hash: string | null;
   gemini_api_key: string | null;
   ai_provider: string;
+  leaderboard_public: boolean;
 }
 
 function mapSettingsRow(row: UserSettingsRow): UserSettingsRecord {
@@ -60,6 +62,7 @@ function mapSettingsRow(row: UserSettingsRow): UserSettingsRecord {
     hasPassword: row.password_hash !== null,
     hasGeminiKey: row.gemini_api_key !== null && row.gemini_api_key.length > 0,
     aiProvider: row.ai_provider === 'gemini' ? 'gemini' : 'server',
+    leaderboardPublic: Boolean(row.leaderboard_public),
   };
 }
 
@@ -115,6 +118,11 @@ export async function getAiProvider(userId: number): Promise<'server' | 'gemini'
 export async function setAiProvider(userId: number, provider: 'server' | 'gemini'): Promise<void> {
   await ensureSettingsRow(userId);
   await db()('user_settings').where({ user_id: userId }).update({ ai_provider: provider, updated_at: db().fn.now() });
+}
+
+export async function setLeaderboardPublic(userId: number, isPublic: boolean): Promise<void> {
+  await ensureSettingsRow(userId);
+  await db()('user_settings').where({ user_id: userId }).update({ leaderboard_public: isPublic, updated_at: db().fn.now() });
 }
 
 export async function getSettings(userId: number): Promise<UserSettingsRecord> {

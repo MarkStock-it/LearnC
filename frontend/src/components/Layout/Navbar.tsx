@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api, isLoggedIn, signOut } from '../../services/api';
+import { isGuestMode } from '../../lib/guestMode';
 import { PreferencesMenu } from './PreferencesMenu';
 
 /**
@@ -12,17 +13,13 @@ export function Navbar() {
   const location = useLocation();
   const [accountName, setAccountName] = useState<string | null>(null);
 
-  // The workbench carries its own in-layout top bar (back button, breadcrumb,
-  // preference circles), so the site navbar would be duplicate chrome there.
-  const onWorkbench = /^\/problems\/\d+$/.test(location.pathname);
-  if (onWorkbench) return null;
-
   useEffect(() => {
     if (!isLoggedIn()) {
       setAccountName(null);
       return;
     }
     let cancelled = false;
+    setAccountName(null);
     api
       .me()
       .then((me) => {
@@ -37,11 +34,17 @@ export function Navbar() {
   }, [location.pathname]);
 
   const onDashboard = location.pathname === '/';
+  const onWorkbench = /^\/problems\/\d+$/.test(location.pathname);
+  const onSignedOutLanding = (location.pathname === '/' || location.pathname === '/login') && !isLoggedIn() && !isGuestMode();
 
   const signOutAndReload = async () => {
+    await api.logout().catch(() => undefined);
     signOut();
+    setAccountName(null);
     window.location.assign('/');
   };
+
+  if (onWorkbench || onSignedOutLanding) return null;
 
   return (
     <header className="toolbar">
@@ -68,7 +71,12 @@ export function Navbar() {
         </nav>
 
         <div className="ms-auto flex items-center gap-2">
-          {accountName ? (
+          {isGuestMode() ? (
+            <span className="guest-mode-pill">
+              Guest mode
+              <Link to="/login" className="link ms-1">Sign in</Link>
+            </span>
+          ) : accountName ? (
             <>
               <Link
                 to="/login"

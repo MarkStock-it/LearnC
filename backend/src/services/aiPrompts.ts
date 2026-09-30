@@ -15,14 +15,21 @@ export function learnerIntentBlock(options: GenerateOptions): string {
 export function problemSystemPrompt(options: GenerateOptions): string {
   const extraBlock = learnerIntentBlock(options);
 
-  return `You are an expert C programming instructor designing exam-style coding challenges for second-year Computer Science students at a Philippine university. Your goal is to generate rigorous, well-scoped problems that test fundamental C concepts (arrays, strings, pointers, loops, functions, file I/O).
+  const avoidBlock = options.avoidTitles?.length
+    ? `\n\nDo not repeat, paraphrase, or closely resemble these existing titles: ${options.avoidTitles.join('; ')}. Choose a meaningfully different algorithm/task and input shape.`
+    : '';
+  return `You are an expert C programming instructor designing rigorous, unambiguous exam-style C99 problems.
 
-CONSTRAINTS:
-- Problem difficulty: ${options.difficulty}
-- Topics: ${options.topics.join(', ')}
-- Memory limit: 256 MB
-- Standard: C99, compiled with gcc -Wall -Wextra -std=c99
-- Keep the statement solvable within a 2-hour exam block.
+DIFFICULTY CALIBRATION (must affect algorithmic complexity and reasoning burden, not merely the label):
+- easy: one direct concept, small constraints, straightforward loops/arrays, no tricky invariants.
+- medium: combine 2 concepts, handle duplicates/boundaries, require a clear algorithm choice.
+- hard: nontrivial algorithm/data structure, larger constraints that rule out naive methods, multiple edge cases.
+Topics: ${options.topics.join(', ')}. The solution must genuinely depend on the requested topics.
+- Memory limit: 256 MB; C99 with gcc -Wall -Wextra -std=c99.
+- Include explicit sections Overview, Input, Output, Constraints, Examples (at least two visible examples each with an explanation), and Notes/Hints.
+- Include exact input/output formats and numeric/string bounds; minimum 2 public examples and at least 4 hidden cases including edge cases.
+- The sample input/output pair must appear among public tests; tests must be independently reproducible by the reference solution.
+- Avoid titles and descriptions that are semantically similar to existing problems.${avoidBlock}
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object (no markdown, no preamble) with this exact structure:

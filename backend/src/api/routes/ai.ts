@@ -4,15 +4,18 @@ import * as repo from '../../db/repositories.js';
 import { generateProblemBundleForUser, verifyTestCases, type GeneratedBundle } from '../../services/aiService.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler, parseWith } from '../http.js';
-import { requireUser } from '../middleware/currentUser.js';
+import { requireAuthenticatedUser } from '../middleware/currentUser.js';
 import { generateProblemSchema } from '../schemas.js';
 
 export const aiRouter = Router();
 
-/** Every route here needs a resolved user. */
-aiRouter.use((req, _res, next) => {
-  requireUser(req);
-  next();
+aiRouter.use('/generate-problem', (req, _res, next) => {
+  try {
+    requireAuthenticatedUser(req);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 interface PersistedProblem {
@@ -22,6 +25,8 @@ interface PersistedProblem {
   verificationPassed: boolean;
   verificationDetail: string;
   warnings: string[];
+  providerUsed: 'gemini' | 'server' | 'offline';
+  helperFiles: Array<{ filename: string; language: 'c' | 'h'; purpose: string; autoInclude: boolean; content: string }>;
 }
 
 async function generateOne(
@@ -31,7 +36,7 @@ async function generateOne(
   geminiKey: string | null,
   avoidTitles: string[],
 ): Promise<PersistedProblem> {
-  const { bundle, providerUsed, geminiError } = await generateProblemBundleForUser(
+  const { bundle, providerUsed } = await generateProblemBundleForUser(
     {
       difficulty: body.difficulty,
       topics: body.topics,
@@ -41,30 +46,31 @@ async function generateOne(
       // Learner intent + avoid-list ride along so the provider can honour them.
       instructions: body.quiz.instructions,
       avoidTitles,
+      excludeProblemIds: body.excludeProblemIds,
     },
     {
-      aiProvider: body.compact ? 'gemini' : (await authRepo.getSettings(userId)).aiProvider,
+      aiProvider: (await authRepo.getSettings(userId)).aiProvider,
       geminiKey,
       geminiModel: body.geminiModel,
       compact: body.compact,
     },
   );
 
-  const verification = await verifyTestCases(bundle.problem, bundle.testCases);
+  const verification = await verifyTestCases(bundle.problem, bundle.testCases, bundle.helperFiles);
 
   if (!body.persist) {
     throw new Error('dry-run-not-supported-in-quiz-loop');
   }
 
   const setTitle = body.quiz.quizTitle ?? `${username}'s practice quiz`;
-  const sets = await repo.listProblemSets();
+  const sets = await repo.listProblemSets(userId);
   let problemSetId = sets.find((set) => set.title === setTitle && set.examYear === null)?.id ?? null;
   if (problemSetId === null) {
     problemSetId = await repo.createProblemSet({
       title: setTitle,
       description: `AI-generated practice problems created by ${username}.`,
       difficulty: body.difficulty,
-      createdBy: userId,
+      userId,
     });
   }
 
@@ -80,6 +86,7 @@ async function generateOne(
     aiGenerated: bundle.source !== 'offline',
     aiPromptParams: {
       provider: bundle.source,
+      helperFiles: bundle.helperFiles,
       providerUsed,
       difficulty: body.difficulty,
       topics: body.topics,
@@ -111,7 +118,10 @@ async function generateOne(
     verificationPassed: verification.passed,
     verificationDetail: verification.detail,
     warnings: bundle.warnings,
+    providerUsed,
+    helperFiles: bundle.helperFiles,
   };
+
 }
 
 /**
@@ -124,24 +134,19 @@ async function generateOne(
 aiRouter.post(
   '/generate-problem',
   asyncHandler(async (req, res) => {
-    const user = requireUser(req);
+    const user = requireAuthenticatedUser(req);
     const body = parseWith(generateProblemSchema, req.body, 'request body');
     const geminiKey = await authRepo.getGeminiKey(user.id);
 
     const count = body.quiz.problemCount;
     const created: PersistedProblem[] = [];
-    const avoid: string[] = [...body.quiz.avoidTitles];
-    const providerUsedList = new Set<string>();
-    let geminiError: string | null = null;
+    const avoid: string[] = [...body.quiz.avoidTitles, ...(await repo.listProblemSets(user.id)).map((set) => set.title)];
 
     for (let index = 0; index < count; index += 1) {
       try {
         const item = await generateOne(user.id, user.username, body, geminiKey, avoid);
         created.push(item);
         avoid.push(item.title);
-        if (item.warnings.some((warning) => warning.startsWith('Gemini generation failed'))) {
-          geminiError = item.warnings.find((warning) => warning.startsWith('Gemini generation failed')) ?? null;
-        }
       } catch (error) {
         if (error instanceof Error && error.message === 'dry-run-not-supported-in-quiz-loop') break;
         throw error;
@@ -151,8 +156,8 @@ aiRouter.post(
     res.status(201).json({
       count: created.length,
       problems: created,
-      problemSetId: created.length > 0 ? (await repo.listProblemSets()).find((set) => set.title === (body.quiz.quizTitle ?? `${user.username}'s practice quiz`))?.id ?? null : null,
-      geminiError,
+      geminiError: created.flatMap((item) => item.warnings).find((warning) => warning.startsWith('Gemini generation failed')) ?? null,
+      problemSetId: created.length > 0 ? (await repo.listProblemSets(user.id)).find((set) => set.title === (body.quiz.quizTitle ?? `${user.username}'s practice quiz`))?.id ?? null : null,
       notes:
         created.length < count
           ? [`Only ${created.length}/${count} problems could be generated; check warnings.`]
@@ -162,7 +167,8 @@ aiRouter.post(
 );
 
 /** GET /api/ai/status — what the server-side provider is right now. */
-aiRouter.get('/status', asyncHandler(async (_req, res) => {
+aiRouter.get('/status', asyncHandler(async (req, res) => {
+  requireAuthenticatedUser(req);
   const settings = (await import('../../config.js')).config.ai;
   res.json({
     serverProvider: settings.provider,
