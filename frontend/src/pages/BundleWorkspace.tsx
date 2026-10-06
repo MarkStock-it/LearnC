@@ -220,6 +220,10 @@ export function BundleWorkspace({ children, onSignedOut }: { children: ReactNode
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented) {
         if (document.querySelector('[aria-label="Preferences"][aria-expanded="true"]')) return;
+        // A modal dialog owns Escape while it is open. Keydown still bubbles out of the top
+        // layer, so without this guard dismissing the public-bundle preview also ran this
+        // handler and navigated the user back to the hub behind the panel.
+        if (document.querySelector('dialog[open]')) return;
         event.preventDefault();
         returnToSelector();
       }
@@ -243,21 +247,21 @@ export function BundleWorkspace({ children, onSignedOut }: { children: ReactNode
     top: expanded ? target.top : origin.top,
     width: expanded ? target.width : origin.width,
     height: expanded ? target.height : origin.height,
-    borderRadius: expanded ? 24 : 24,
+    borderRadius: 'var(--radius-sheet)',
     transitionDuration: reducedMotion ? '1ms' : undefined,
   } : origin && phase === 'closing' ? {
     left: origin.left,
     top: origin.top,
     width: origin.width,
     height: origin.height,
-    borderRadius: 24,
+    borderRadius: 'var(--radius-sheet)',
     transitionDuration: reducedMotion ? '1ms' : undefined,
   } : target ? {
     left: target.left,
     top: target.top,
     width: target.width,
     height: target.height,
-    borderRadius: 24,
+    borderRadius: 'var(--radius-sheet)',
   } : origin ? {
     left: origin.left,
     top: origin.top,
@@ -286,10 +290,14 @@ export function BundleWorkspace({ children, onSignedOut }: { children: ReactNode
 
       <div className={`bundle-selector ${phase === 'opening' ? 'bundle-selector--opening' : ''} ${phase === 'destination' ? 'bundle-selector--open' : ''} ${phase === 'closing' ? 'bundle-selector--returning' : ''}`} aria-hidden={phase !== 'selector' ? true : undefined}>
         <header className="bundle-selector-header">
+          <p className="bundle-brand">{'/* entry point */'}</p>
           <h1 className="bundle-selector-title">Choose where to go</h1>
         </header>
 
-        <div className="bundle-choice-grid" role="group" aria-label="Choose a destination">
+        {/* The three destinations are the three entries the program can take, so they are
+            presented the way this app presents every other list: numbered, under one rail,
+            read top to bottom. The rail itself is `.gutter`. */}
+        <div className="bundle-choice-grid gutter" role="group" aria-label="Choose a destination">
           {DESTINATIONS.map((destination, index) => (
             <button
               key={destination.id}
@@ -302,8 +310,11 @@ export function BundleWorkspace({ children, onSignedOut }: { children: ReactNode
               tabIndex={phase === 'selector' ? 0 : -1}
               style={{ '--bundle-index': index } as CSSProperties}
             >
-              <span className="bundle-choice-title">{destination.title}</span>
-              <span className="bundle-choice-detail">{destination.detail}</span>
+              <span className="bundle-choice-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+              <span className="bundle-choice-body">
+                <span className="bundle-choice-title">{destination.title}</span>
+                <span className="bundle-choice-detail">{destination.detail}</span>
+              </span>
               <ArrowMark className="bundle-choice-arrow" />
             </button>
           ))}

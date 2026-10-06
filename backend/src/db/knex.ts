@@ -53,6 +53,18 @@ export async function closeDb(): Promise<void> {
   }
 }
 
+/**
+ * Columns that a later migration adds. Checking table *names* alone is not enough: on a
+ * database that predates migration 003, every required table exists, so a name-only guard
+ * passes, the process reports healthy, and then most endpoints return 500 at request time
+ * because the query references a column that is not there. These are checked by name too,
+ * so that failure happens at boot where it can be seen.
+ */
+const REQUIRED_COLUMNS: Record<string, string[]> = {
+  problem_sets: ['user_id', 'is_public', 'published_at', 'published_by', 'orphaned'],
+  user_settings: ['leaderboard_public'],
+};
+
 /** Fail fast at boot if the schema has not been migrated yet. */
 export async function assertSchemaReady(): Promise<void> {
   const conn = db();
@@ -70,10 +82,24 @@ export async function assertSchemaReady(): Promise<void> {
   }
   if (missing.length > 0) {
     throw new Error(
-      `Database schema is incomplete (missing: ${missing.join(', ')}). Run \`npm run db:migrate\` first.`,
+      `Database schema is incomplete (missing tables: ${missing.join(', ')}). Run \`npm run db:migrate\` first.`,
     );
   }
-  logger.debug({ tables: required.length }, 'schema verified');
+
+  const missingColumns: string[] = [];
+  for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
+    for (const column of columns) {
+      if (!(await conn.schema.hasColumn(table, column))) missingColumns.push(`${table}.${column}`);
+    }
+  }
+  if (missingColumns.length > 0) {
+    throw new Error(
+      `Database schema is behind this build (missing columns: ${missingColumns.join(', ')}). ` +
+        'A migration is pending — run `npm run db:migrate` before serving traffic.',
+    );
+  }
+
+  logger.debug({ tables: required.length, columns: missingColumns.length }, 'schema verified');
 }
 
 /**

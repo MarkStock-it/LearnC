@@ -37,6 +37,37 @@ export async function appliedMigrations(knex: Knex): Promise<string[]> {
   return rows.map((row) => row.name);
 }
 
+/**
+ * Migrations this build expects that the database has not recorded as applied.
+ *
+ * Deliberately does not go through `ensureTrackingTable`: a boot-time check must not write
+ * to the database, and a missing tracking table only means nothing has been applied yet.
+ */
+export async function pendingMigrations(knex: Knex = db()): Promise<string[]> {
+  if (!(await knex.schema.hasTable(TRACKING_TABLE))) return MIGRATIONS.map((m) => m.name);
+  const done = new Set(await appliedMigrations(knex));
+  return MIGRATIONS.filter((m) => !done.has(m.name)).map((m) => m.name);
+}
+
+/**
+ * Fail fast at boot if this build needs migrations the database does not have.
+ *
+ * Without this the API starts, reports `ok` on `/api/health`, and then returns 500 for
+ * every endpoint whose query touches a column the migration was going to add — a deploy
+ * that looks successful and is broken per request. Refusing to start is louder and is
+ * recoverable by running the documented command.
+ */
+export async function assertMigrationsApplied(knex: Knex = db()): Promise<void> {
+  const pending = await pendingMigrations(knex);
+  if (pending.length > 0) {
+    throw new Error(
+      `Database is ${pending.length} migration(s) behind this build (pending: ${pending.join(', ')}). ` +
+        'Run `npm run db:migrate` before serving traffic.',
+    );
+  }
+  logger.debug({ migrations: MIGRATIONS.length }, 'migrations verified');
+}
+
 export async function migrateUp(knex: Knex = db()): Promise<string[]> {
   await ensureTrackingTable(knex);
   const done = new Set(await appliedMigrations(knex));

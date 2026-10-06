@@ -2,7 +2,11 @@
  * design system follows, in this order:
  *   tokens.css  — the portable token system (colours, type, space, motion, z)
  *   styles/app.css — base rules + the component layer that references those tokens
+ *   styles/animations.css — the motion library, kept separate because it is the one
+ *                         part of the system that is a set of named, reusable effects
+ *                         rather than a set of values
  * Components never inline a raw colour: every value comes through var(--token). */
 @import 'tailwindcss';
 @import '../tokens.css';
 @import './styles/app.css';
+@import './styles/animations.css';

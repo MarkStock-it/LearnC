@@ -1,0 +1,370 @@
+/* Motion for the listing.
+ *
+ * The rule behind every animation here: a compiler does not glide, it prints. The
+ * machine's own events resolve in discrete frames — `--ease-steps` — so a build log
+ * fills, a diagnostic lands, and a status line changes the way text appears in a
+ * terminal. Anything a person is meant to *read arriving* slides on `--ease-out`
+ * instead, because an interface that resolves in visible steps everywhere reads as
+ * broken rather than as mechanical. So there are two registers, and each rule says
+ * which one it is in.
+ *
+ * Everything is CSS. Each keyframe declares its hidden frame and leaves the element's
+ * own style visible, so the single universal reduced-motion rule in app.css collapses
+ * all of it — there is no parallel JS copy of the motion to drift out of sync.
+ *
+ * Every effect here is one something actually uses. Three that were written and never
+ * applied (`.a-wipe`, `.a-wipe-y`, `.a-caret`) have been removed rather than kept as a
+ * library: an unused effect is decoration, and this file is not a catalogue.
+ *
+ * The stagger: publish an index with `revealDelay(i)` (lib/reveal.ts) and the delay
+ * cascades as `var(--i) * var(--stagger)`.
+ *
+ * Fill mode is `backwards` on every entrance, never `both` or `forwards`. The hidden
+ * frame lives only in the keyframes, so an element's own style is always the visible
+ * one and the entrance can never strand content invisible — not on a stalled document
+ * timeline, not under an aggressive reduced-motion policy, not if this stylesheet is
+ * stripped. `backwards` still hides the element through its staggered pre-delay, which
+ * is all the stagger needs. (`--shadow-stamp` retraction in `.a-strike` and the width
+ * travel in `.a-fill` carry a second, harder reason: a data-bearing bar that fills from
+ * zero and never finishes states a falsehood — an empty bar beside "12/12".)
+ */
+
+/* Everything below lives in the `components` layer, the same one app.css uses. It was
+ * previously unlayered, which made it silently stronger than every Tailwind utility as
+ * well as every app.css rule — so a `md:grid-cols-2` on an element carrying `.gutter-row`
+ * was ignored with no error. Source order still decides between this file and app.css
+ * (this one is imported last, so it still wins), and utilities are now free to override,
+ * which is the order the rest of the system already assumed. The braces below are not
+ * re-indented: the layer is a grouping, not a nesting level.
+ */
+@layer components {
+
+/* ——— Entrances ——————————————————————————————————————————————————————— */
+
+/* A block of the page compiles into place. Discrete frames: this is the listing
+ * being printed, not a card fading in. Used for section-level entrances. */
+@keyframes a-compile {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.a-compile {
+  animation: a-compile var(--dur-long) var(--ease-steps) calc(var(--i, 0) * var(--stagger)) backwards;
+}
+
+/* One line of a listing arrives left-to-right, the way a teletype prints. Use on the
+ * individual rows of a numbered list; pair with `.a-compile` on the container. */
+@keyframes a-line-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+.a-line {
+  animation: a-line-in var(--dur-step) var(--ease-steps) calc(var(--i, 0) * var(--stagger)) backwards;
+}
+
+/* A row of a dense list or table steps down into place. Smaller travel than
+ * `.a-compile` because there are many of them. */
+@keyframes a-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+.a-row {
+  animation: a-row-in var(--dur-step) var(--ease-steps) calc(var(--i, 0) * var(--stagger)) backwards;
+}
+
+/* ——— The machine working ————————————————————————————————————————————— */
+
+/* The terminal insertion point. A hard block, stepping on and off — never a
+ * smoothing opacity fade, which would read as a pulse rather than a cursor. */
+@keyframes a-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Four blocks lighting up in sequence: the busy state. Deliberately not a spinner —
+ * a rotating ring is the most diluted busy indicator there is, and this one belongs
+ * to the same machine as the rest of the page. */
+@keyframes a-block-on {
+  0% {
+    opacity: 0.16;
+  }
+  14% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.16;
+  }
+}
+
+.a-blocks {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.a-blocks > i {
+  display: block;
+  inline-size: 7px;
+  block-size: 7px;
+  background-color: var(--color-accent);
+  opacity: 0.16;
+  animation: a-block-on 900ms steps(1, end) infinite;
+}
+
+.a-blocks > i:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.a-blocks > i:nth-child(3) {
+  animation-delay: 220ms;
+}
+
+.a-blocks > i:nth-child(4) {
+  animation-delay: 330ms;
+}
+
+/* The compile sweep: a signal block travelling across a rail in discrete steps. Used
+ * on the rail under a page header while a build or generation is in flight. */
+@keyframes a-scan {
+  from {
+    translate: -30% 0;
+  }
+  to {
+    translate: 130% 0;
+  }
+}
+
+.a-scan {
+  position: relative;
+  overflow: hidden;
+  block-size: 2px;
+  background-color: var(--color-rule);
+}
+
+.a-scan::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inline-size: 26%;
+  background-color: var(--color-accent);
+  animation: a-scan 1.15s var(--ease-steps) infinite;
+}
+
+/* A determinate bar filling in steps. The percentage is the element's own inline
+ * size, so the bar always ends honest to its value; only the travel is stepped. */
+@keyframes a-fill {
+  from {
+    inline-size: 0;
+  }
+}
+
+.a-fill {
+  animation: a-fill var(--dur-long) var(--ease-steps) backwards;
+}
+
+/* ——— Marks ——————————————————————————————————————————————————————————— */
+
+/* A verdict lands. The hard offset shadow is a print mark: it appears with the
+ * element, then retracts, leaving the mark flat on the page. */
+@keyframes a-strike {
+  0% {
+    opacity: 0;
+    transform: translate(-3px, -3px);
+  }
+  55% {
+    opacity: 1;
+    transform: none;
+    box-shadow: var(--shadow-stamp);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.a-strike {
+  animation: a-strike var(--dur-long) var(--ease-steps) calc(var(--i, 0) * var(--stagger)) backwards;
+}
+
+/* A diagnostic arrives. Three frames, no glide: the compiler does not ease into
+ * telling you that you were wrong.
+ *
+ * It arrives WITHOUT hiding its text. The pen mark draws itself — a 3px rail extends
+ * from the start edge and a wash of signal ink flashes behind the line — while the
+ * sentence is readable on the first frame. This is the same rule the verdict panel
+ * follows: content the student must read does not get to depend on a time-based
+ * effect, and an error message is the most must-read content in the app. */
+@keyframes a-diag {
+  from {
+    box-shadow: inset 0 0 0 0 var(--color-accent);
+    background-color: color-mix(in oklab, var(--color-accent) 24%, transparent);
+  }
+
+  to {
+    box-shadow: inset 3px 0 0 0 var(--color-accent);
+    background-color: transparent;
+  }
+}
+
+.a-diag {
+  animation: a-diag var(--dur-short) steps(3, end) backwards;
+}
+
+/* A status or toast line steps up from the edge of the page. */
+@keyframes a-toast {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.a-toast {
+  animation: a-toast var(--dur-short) var(--ease-steps) backwards;
+}
+
+/* ——— The gutter ——————————————————————————————————————————————————————— */
+
+/* The listing rail: the page's signature structure, factored out so any surface whose
+ * content genuinely IS a list can adopt it. Rows carry their own number, so a row that
+ * wraps still keeps the line it is on.
+ *
+ *   <div class="gutter">
+ *     <div class="gutter-row"><span class="gutter-ln">1</span><div>…</div></div>
+ *   </div>
+ */
+.gutter {
+  position: relative;
+}
+
+.gutter::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: var(--gutter-width);
+  background-color: var(--gutter-bg);
+  border-inline-end: 1px solid var(--color-rule);
+}
+
+.gutter-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--gutter-width) minmax(0, 1fr);
+  align-items: center;
+  border-block-end: 1px solid var(--color-rule);
+}
+
+.gutter-row:last-child {
+  border-block-end: 0;
+}
+
+.gutter-ln {
+  padding-inline-end: 0.85rem;
+  text-align: end;
+  font-size: var(--text-micro);
+  color: var(--ln-color);
+  user-select: none;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+/* The writer's position, marked the way an editor marks it: a hard block in the rail. */
+.gutter-row[data-active='true'] .gutter-ln {
+  color: var(--color-accent);
+}
+
+.gutter-row[data-active='true']::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.15rem;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background-color: var(--color-accent);
+}
+
+/* A failed row wears the signal colour on its number, the way a compiler points at
+ * the line it could not accept. */
+.gutter-row[data-flagged='true'] .gutter-ln {
+  color: var(--color-accent);
+}
+
+.gutter-body {
+  min-width: 0;
+  padding-block: var(--space-sm);
+  padding-inline: var(--space-md) var(--space-md);
+}
+
+/* ——— The status bar ——————————————————————————————————————————————————— */
+
+/* The second structural device: a strip of real state along the bottom edge, in the
+ * same register as the gutter numbers. It reports what is actually true — never a
+ * decorative footer. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  min-height: 2.25rem;
+  padding-inline: var(--space-sm) var(--space-md);
+  border-block-start: 1px solid var(--color-rule);
+  background-color: var(--color-surface-2);
+  color: var(--color-faint);
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-mono);
+}
+
+.statusbar-item {
+  white-space: nowrap;
+}
+
+.statusbar-item[data-strength='strong'] {
+  color: var(--color-ink-soft);
+}
+
+.statusbar-spacer {
+  flex: 1 1 auto;
+}
+
+.statusbar-state {
+  color: var(--color-ink-soft);
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.statusbar-state[data-state='error'] {
+  color: var(--color-accent);
+}
+
+.statusbar-state[data-state='ok'] {
+  color: var(--color-pass);
+}
+
+} /* end @layer components */
+
+/* ——— Reduced motion ——————————————————————————————————————————————————— */
+
+/* The universal rule in app.css already collapses every animation and transition to
+ * 0.01ms. Two things need more than that here: an infinite animation must also stop
+ * repeating, and the scan sweep leaves a block parked off to one side if it freezes
+ * mid-travel, so it is removed rather than frozen. */
+@media (prefers-reduced-motion: reduce) {
+  .a-blocks > i {
+    animation: none;
+    opacity: 1;
+  }
+
+  .a-scan::after {
+    display: none;
+  }
+}

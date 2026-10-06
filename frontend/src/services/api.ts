@@ -319,6 +319,28 @@ export function signOut(): void {
   setStudentName('');
 }
 
+/**
+ * Fired when the server rejects the credential we presented.
+ *
+ * `signOut()` clears what this app *stores*; this is the different, factual event that the
+ * server no longer honours it. Something has to re-render when that happens, because until
+ * it does the app keeps presenting a signed-in shell that every single request refuses.
+ */
+const sessionLostListeners = new Set<() => void>();
+
+/** Subscribe to "the stored credential was rejected". Returns an unsubscribe function. */
+export function onSessionLost(listener: () => void): () => void {
+  sessionLostListeners.add(listener);
+  return () => {
+    sessionLostListeners.delete(listener);
+  };
+}
+
+function discardRejectedSession(): void {
+  signOut();
+  for (const listener of [...sessionLostListeners]) listener();
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const token = isGuestMode() ? '' : getToken();
   const response = await fetch(`/api${path}`, {
@@ -331,6 +353,11 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    // A 401 is proof of a dead session only when a credential was actually presented, so
+    // the check is on `token`, not on `isLoggedIn()`. A guest sends no credential at all,
+    // and a failed sign-in attempt sends none either — neither can be signed out by this.
+    if (response.status === 401 && token.length > 0) discardRejectedSession();
+
     let message = `Request failed with status ${response.status}`;
     try {
       const body = (await response.json()) as { error?: { message?: string } };

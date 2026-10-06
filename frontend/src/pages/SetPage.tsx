@@ -6,6 +6,15 @@ import { StatusMark } from '../components/ui/StatusMark';
 import { revealDelay } from '../lib/reveal';
 import { Pagination } from '../components/ui/Pagination';
 
+/**
+ * One problem set, as a listing.
+ *
+ * The problems are the page, so they are set as a numbered listing: the rail carries
+ * the line number, the body carries the title, and a solved problem is marked with the
+ * pass stamp rather than by tinting the whole row. The status bar reports what is
+ * actually true about this page — how many of these problems are solved, and which
+ * page of the set you are on.
+ */
 export function SetPage() {
   const { setId } = useParams();
   const id = Number(setId);
@@ -29,6 +38,10 @@ export function SetPage() {
   const entries = problems.data?.problems ?? [];
   const solvedCount = entries.filter((problem) => solvedIds.has(problem.id)).length;
 
+  const total = problems.data?.total ?? problemSet?.problemCount ?? 0;
+  const page = problems.data ? Math.floor(problems.data.offset / problems.data.limit) + 1 : 1;
+  const pageCount = problems.data ? Math.max(1, Math.ceil(problems.data.total / problems.data.limit)) : 1;
+
   /* Only once the set list has actually arrived: before that, an unknown id is just
    * a set we have not heard about yet. Without this the page fell through to a
    * generic "Problem set" heading over an empty body. */
@@ -36,7 +49,7 @@ export function SetPage() {
 
   return (
     <div className="flex flex-col gap-[var(--space-xl)]">
-      <nav aria-label="Breadcrumb" className="type-micro reveal" style={revealDelay(0)}>
+      <nav aria-label="Breadcrumb" className="type-micro a-compile">
         <Link to="/bundles/your" className="link">
           Problem sets
         </Link>
@@ -45,7 +58,7 @@ export function SetPage() {
       </nav>
 
       {missing ? (
-        <section className="surface reveal p-[var(--space-lg)]" style={revealDelay(1)}>
+        <section className="surface a-compile p-[var(--space-lg)]">
           <h1 className="type-title">That problem set doesn’t exist</h1>
           <p className="type-small measure mt-[var(--space-2xs)] text-[var(--color-muted)]">
             Nothing is filed under “{setId}”. The link may be mistyped, or the set may have been
@@ -56,10 +69,12 @@ export function SetPage() {
           </Link>
         </section>
       ) : set.isError ? (
-        <p role="alert" className="type-small text-[var(--color-fail)]">Could not load this problem set: {(set.error as Error).message}</p>
+        <p role="alert" className="a-diag type-small border-s-2 border-[var(--color-fail)] ps-3 text-[var(--color-fail)]">
+          Could not load this problem set: {(set.error as Error).message}
+        </p>
       ) : (
         <>
-          <header className="reveal" style={revealDelay(1)}>
+          <header className="a-compile">
             <h1 className="type-display">{problemSet?.title ?? 'Problem set'}</h1>
             {problemSet?.description ? (
               <p className="type-lede measure mt-[var(--space-xs)]">{problemSet.description}</p>
@@ -67,64 +82,83 @@ export function SetPage() {
             {/* Progress stacks below the title rather than beside it (gate 54). */}
             {entries.length > 0 ? (
               <p className="num type-small mt-[var(--space-sm)] text-[var(--color-muted)]">
-                {solvedCount} of {entries.length} on this page solved · {problems.data?.total ?? problemSet?.problemCount ?? 0} total problems
+                {solvedCount} of {entries.length} on this page solved · {total} total problems
               </p>
             ) : null}
           </header>
 
           {problems.isLoading ? (
-            <p className="type-small text-[var(--color-muted)]">Loading problems…</p>
+            <p className="type-small flex items-center gap-2 text-[var(--color-muted)]">
+              <span className="a-blocks" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              Loading problems…
+            </p>
           ) : null}
 
           {problems.isError ? (
-            <p className="type-small text-[var(--color-fail)]">
+            <p role="alert" className="a-diag type-small border-s-2 border-[var(--color-fail)] ps-3 text-[var(--color-fail)]">
               Problems could not be loaded: {(problems.error as Error).message}
             </p>
           ) : null}
 
           {problems.isSuccess && problems.data.total === 0 ? (
-            <p className="type-small text-[var(--color-muted)]">
-              This set has no problems yet.
-            </p>
+            <p className="type-small text-[var(--color-muted)]">This set has no problems yet.</p>
           ) : null}
 
+          {/* The rail numbers the problems, so the title does not have to carry a
+           * position. `role="list"` keeps the list semantics the `<ul>` had. */}
           {entries.length > 0 ? (
-            <ul className="surface reveal overflow-hidden" style={revealDelay(2)}>
+            <div className="gutter a-compile" role="list" aria-label="Problems in this set">
               {entries.map((problem, index) => {
                 const solved = solvedIds.has(problem.id);
                 return (
-                  <li key={problem.id} className={index === 0 ? '' : 'border-t border-[var(--color-rule)]'}>
-                    <Link
-                      to={`/problems/${problem.id}`}
-                      className="row-hover flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-4"
-                    >
-                      <span className="flex min-w-0 items-baseline gap-2">
-                        {solved ? (
-                          <span className="verdict-pass translate-y-[1px]">
-                            <StatusMark kind="pass" />
+                  <div
+                    key={problem.id}
+                    className="gutter-row a-line"
+                    role="listitem"
+                    style={revealDelay(index)}
+                  >
+                    <span className="gutter-ln" aria-hidden="true">
+                      {index + 1}
+                    </span>
+                    <div className="gutter-body">
+                      <Link
+                        to={`/problems/${problem.id}`}
+                        className="row-hover flex flex-wrap items-baseline gap-x-4 gap-y-1"
+                      >
+                        <span className="flex min-w-0 items-baseline gap-2">
+                          {solved ? (
+                            <span className="verdict-pass translate-y-[1px]">
+                              <StatusMark kind="pass" />
+                            </span>
+                          ) : null}
+                          <span className="row-title text-[var(--text-body)] font-[var(--weight-strong)] text-[var(--color-ink)]">
+                            {problem.title}
                           </span>
-                        ) : null}
-                        <span className="row-title text-[var(--text-body)] font-[var(--weight-strong)] text-[var(--color-ink)]">
-                          {problem.title}
                         </span>
-                      </span>
 
-                      <span className="type-micro">{problem.difficulty}</span>
+                        <span className="type-micro">{problem.difficulty}</span>
 
-                      <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        {problem.tags.map((tag) => (
-                          <span key={tag} className="tag">
-                            {tag}
-                          </span>
-                        ))}
-                        <span className="num type-micro">{problem.testCaseCount} cases</span>
-                      </span>
-                    </Link>
-                  </li>
+                        <span className="ms-auto flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                          {problem.tags.map((tag) => (
+                            <span key={tag} className="tag">
+                              {tag}
+                            </span>
+                          ))}
+                          <span className="num type-micro">{problem.testCaseCount} cases</span>
+                        </span>
+                      </Link>
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           ) : null}
+
           {problems.data ? (
             <Pagination
               total={problems.data.total}
@@ -136,6 +170,25 @@ export function SetPage() {
           ) : null}
         </>
       )}
+
+      <div className="statusbar">
+        <span className="statusbar-item" data-strength="strong">
+          {problemSet?.title ?? `Set ${setId}`}
+        </span>
+        <span className="statusbar-item">{total} problems</span>
+        <span className="statusbar-item">{solvedCount} solved on this page</span>
+        <span className="statusbar-spacer" />
+        <span
+          className="statusbar-state"
+          data-state={problems.isError ? 'error' : problems.isLoading ? 'run' : 'ok'}
+        >
+          {problems.isError
+            ? 'load failed'
+            : problems.isLoading
+              ? 'reading'
+              : `page ${page} of ${pageCount}`}
+        </span>
+      </div>
     </div>
   );
 }

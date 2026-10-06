@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { SubmissionSummary } from '../../services/api';
 import { formatDateTime, formatRatio } from '../../lib/format';
+import { revealDelay } from '../../lib/reveal';
 import { StatusMark, type MarkKind } from '../ui/StatusMark';
 
 function markFor(status: string, passed: number, total: number): MarkKind {
@@ -45,10 +46,10 @@ export function SubmissionHistory({ submissions }: { submissions: SubmissionSumm
         </tr>
       </thead>
       <tbody>
-        {submissions.map((submission) => {
+        {submissions.map((submission, index) => {
           const mark = markFor(submission.status, submission.passedCount, submission.totalCount);
           return (
-            <tr key={submission.id}>
+            <tr key={submission.id} className="a-row" style={revealDelay(index)}>
               <td>
                 <Link to={`/problems/${submission.problemId}`} className="link">
                   {submission.problemTitle}
@@ -58,7 +59,10 @@ export function SubmissionHistory({ submissions }: { submissions: SubmissionSumm
                 {formatRatio(submission.passedCount, submission.totalCount)}
               </td>
               <td>
-                <span className={`inline-flex items-center gap-1.5 ${MARK_CLASS[mark]}`}>
+                {/* The mark lands: a hard offset print shadow that retracts as it touches
+                 * down. Colour is never the only carrier — the glyph and the word change
+                 * with it. */}
+                <span className={`a-strike inline-flex items-center gap-1.5 ${MARK_CLASS[mark]}`} style={revealDelay(index)}>
                   <StatusMark kind={mark} />
                   <span className="type-small">{submission.status === 'COMPLETED' ? 'Graded' : submission.status === 'FAILED' ? 'Grader error' : 'Running'}</span>
                 </span>

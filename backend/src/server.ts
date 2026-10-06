@@ -1,11 +1,15 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { assertSchemaReady, closeDb } from './db/knex.js';
+import { assertMigrationsApplied } from './db/migrations/index.js';
 import { startQueue, stopQueue } from './queue/index.js';
 import { executorHealth } from './services/executor/index.js';
 import { logger } from './utils/logger.js';
 
 async function main(): Promise<void> {
+  // Migration state first, so a build that is ahead of its database fails with the name of
+  // the pending migration rather than with a missing column.
+  await assertMigrationsApplied();
   await assertSchemaReady();
 
   const app = createApp();

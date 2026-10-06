@@ -21,8 +21,12 @@ echo "=== my free 2xxxx ports in use ==="
 ss -tln | awk '{print $4}' | grep -oE ':[0-9]+$' | tr -d ':' | sort -n | uniq | awk '$1 >= 20000 && $1 <= 21000' | tr '\n' ' '
 echo
 echo "=== postgres reachable databases attempt (learnc db, various users) ==="
+# The database password is read from the environment and never stored in this file. The
+# guard sits here rather than at the top because every diagnostic above this line runs
+# without a database, and requiring the credential would stop them from running at all.
+: "${DCISM_DB_PASSWORD:?Set DCISM_DB_PASSWORD before calling this script}"
 for u in s25103705 learnc postgres; do
-  PGPASSWORD=Jumong09 psql -h 127.0.0.1 -U "$u" -d learnc -tAc 'select 1' 2>&1 | head -1 | sed "s/^/user=$u: /"
+  PGPASSWORD="${DCISM_DB_PASSWORD}" psql -h 127.0.0.1 -U "$u" -d learnc -tAc 'select 1' 2>&1 | head -1 | sed "s/^/user=$u: /"
 done
 echo "=== github reachability from server ==="
 GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes" git ls-remote https://github.com/MarkStock-it/LearnC.git HEAD 2>&1 | head -2

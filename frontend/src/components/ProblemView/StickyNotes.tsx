@@ -9,6 +9,12 @@ import { createPortal } from 'react-dom';
  * localStorage for the session-plus (surviving reloads was the cheap option, so it
  * was taken). Pointer events only on the note chrome itself — a note that is not
  * being touched never intercepts keys meant for the editor.
+ *
+ * A note is bone paper laid on the bone page, held apart by a hard offset shadow and the
+ * slight rotation of something stuck down by hand. It deliberately keeps the rotation:
+ * that tilt is the one gesture in the app that says a person put this here. Its text is the
+ * only proportional type in the workbench, because a note is someone writing, not a
+ * machine printing.
  */
 
 interface StickyNote {
@@ -89,10 +95,12 @@ function Note({
         }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        className="fixed z-[var(--z-toast)] size-7 rounded-full border border-[oklch(75%_0.09_85)] bg-[oklch(93%_0.09_90)] shadow-[0_2px_8px_oklch(20%_0.02_250_/_0.2)] transition-transform hover:scale-110"
+        className="fixed z-[var(--z-toast)] size-7 rounded-[var(--radius-micro)] border border-[var(--color-hairline)] bg-[var(--color-surface)] shadow-[var(--shadow-stamp)]"
         style={{ left: note.x, top: note.y, transform: `rotate(${note.rotation}deg)` }}
         title="Note"
-      />
+      >
+        <span className="sr-only">note</span>
+      </button>
     );
   }
 
@@ -104,7 +112,7 @@ function Note({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      className="fixed z-[var(--z-toast)] w-[220px] rounded-2xl bg-[oklch(93%_0.09_90)] p-3 shadow-[0_10px_30px_oklch(20%_0.02_250_/_0.25)]"
+      className="fixed z-[var(--z-toast)] w-[220px] rounded-[var(--radius-surface)] border border-[var(--color-hairline)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-stamp)]"
       style={{ left: note.x, top: note.y, transform: `rotate(${note.rotation}deg)`, touchAction: 'none' }}
     >
       <div className={`mb-1 flex justify-end gap-1 transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'}`}>
@@ -112,27 +120,28 @@ function Note({
           type="button"
           aria-label="Minimize note"
           onClick={() => onChange({ minimized: true })}
-          className="flex size-6 items-center justify-center rounded-full text-[11px] text-[oklch(40%_0.06_80)] transition-colors hover:bg-[oklch(88%_0.08_85)]"
+          className="type-micro flex min-h-6 items-center justify-center rounded-[var(--radius-micro)] border border-[var(--color-rule)] px-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-ink)]"
           title="Minimize"
         >
-          −
+          hide
         </button>
         <button
           type="button"
           aria-label="Delete note"
           onClick={onRemove}
-          className="flex size-6 items-center justify-center rounded-full text-[11px] text-[oklch(40%_0.06_80)] transition-colors hover:bg-[oklch(88%_0.08_85)]"
+          className="type-micro flex min-h-6 items-center justify-center rounded-[var(--radius-micro)] border border-[var(--color-rule)] px-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-ink)]"
           title="Delete"
         >
-          ✕
+          delete
         </button>
       </div>
+      {/* The only proportional type in the workbench: a note is a person writing. */}
       <textarea
         value={note.text}
         onChange={(event) => onChange({ text: event.target.value })}
         placeholder="Type a note…"
         rows={4}
-        className="w-full resize-none bg-transparent text-[13px] leading-snug text-[oklch(30%_0.05_80)] outline-none placeholder:text-[oklch(55%_0.06_80)]"
+        className="font-prose w-full resize-none bg-transparent text-[13.5px] leading-snug text-[var(--color-ink)] outline-none placeholder:text-[var(--color-faint)]"
         spellCheck={false}
       />
     </div>

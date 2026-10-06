@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from 'react';
+import { revealDelay } from '../../lib/reveal';
 import type { ErrorType, SubmissionResponse, TestCaseResult } from '../../services/api';
 import { StatusMark, type MarkKind } from '../ui/StatusMark';
 import { CompilerFeedback } from '../Editor/CompilerFeedback';
@@ -27,7 +28,10 @@ function TestCaseRow({
   const slow = result.runtimeMs !== null && timeLimitSeconds !== null && result.runtimeMs > timeLimitSeconds * 1000 * 0.7;
 
   return (
-    <li className="border-t border-[var(--color-rule)] first:border-t-0">
+    /* `.reveal` rather than `.a-row`: it fills backwards, so the hidden frame lives only
+     * in the keyframes and a stalled animation can never strand a row invisible. Evidence
+     * is not allowed to depend on a timeline that might not run. */
+    <li className="reveal border-t border-[var(--color-rule)] first:border-t-0" style={revealDelay(index)}>
       <button
         type="button"
         aria-expanded={open}
@@ -35,7 +39,11 @@ function TestCaseRow({
         className="row-hover flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-start"
       >
         <span className={`flex items-center gap-2 ${verdict.className}`}>
-          <StatusMark kind={verdict.mark} />
+          {/* The mark lands like a stamp. It is decorative on purpose: the word beside it
+           * carries the same verdict in text, so the row still reads if the mark does not. */}
+          <span className="a-strike" aria-hidden>
+            <StatusMark kind={verdict.mark} />
+          </span>
           <span className="type-small">{verdict.word}</span>
         </span>
 

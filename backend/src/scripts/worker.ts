@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { assertSchemaReady, closeDb } from '../db/knex.js';
+import { assertMigrationsApplied } from '../db/migrations/index.js';
 import { startQueue, stopQueue } from '../queue/index.js';
 import { executorHealth } from '../services/executor/index.js';
 import { logger } from '../utils/logger.js';
@@ -10,6 +11,7 @@ import { logger } from '../utils/logger.js';
  * entrypoint is only useful for Bull.
  */
 async function main(): Promise<void> {
+  await assertMigrationsApplied();
   await assertSchemaReady();
 
   const sandbox = await executorHealth();

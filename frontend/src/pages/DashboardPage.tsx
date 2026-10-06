@@ -27,6 +27,20 @@ function greetingName(name: string | undefined): string {
   return name ? `, ${name}` : '';
 }
 
+/**
+ * The busy state: four blocks lighting up in sequence, not a spinner. A rotating ring
+ * is the most diluted busy indicator there is; these belong to the same machine as the
+ * status bar underneath them.
+ */
+function Loading({ label }: { label: string }) {
+  return (
+    <p className="flex items-center gap-[var(--space-xs)] type-small text-[var(--color-muted)]">
+      <span className="a-blocks" aria-hidden="true"><i /><i /><i /><i /></span>
+      {label}
+    </p>
+  );
+}
+
 function ContinueCard({ submissions }: { submissions: SubmissionSummary[] }) {
   const latest = submissions.find((submission) => submission.status === 'COMPLETED' && submission.totalCount > 0 && submission.passedCount < submission.totalCount);
   if (!latest) return null;
@@ -36,14 +50,15 @@ function ContinueCard({ submissions }: { submissions: SubmissionSummary[] }) {
   return (
     <section className="bundle-continue surface" aria-labelledby="continue-heading">
       <div className="bundle-continue-copy">
-        <p className="type-micro">CONTINUE PRACTICING</p>
+        <p className="type-micro">{'/* continue practicing */'}</p>
         <h2 id="continue-heading" className="bundle-continue-title">{latest.problemTitle}</h2>
         <div className="bundle-continue-pills">
           <span className={`bundle-outcome bundle-outcome--${result.kind}`}>{result.label}</span>
           <span className="bundle-continue-meta">{latest.passedCount} of {latest.totalCount} tests passed</span>
         </div>
         <div className="bundle-test-progress" role="img" aria-label={`${latest.passedCount} of ${latest.totalCount} test cases passed`}>
-          <span style={{ '--bundle-progress': `${progress}%` } as React.CSSProperties} />
+          {/* .a-fill steps the travel so the bar reads as a machine tallying, not a bar sliding. */}
+          <span className="a-fill" style={{ '--bundle-progress': `${progress}%` } as React.CSSProperties} />
         </div>
         <p className="type-micro">Last attempted {formatDateTime(latest.createdAt)}</p>
       </div>
@@ -66,7 +81,7 @@ function WeeklyActivity({ submissions, loading }: { submissions: SubmissionSumma
   });
   const count = days.filter((day) => day.active).length;
   return (
-    <section className="bundle-side-card surface" aria-labelledby="activity-heading">
+    <section className="bundle-side-card surface a-compile" aria-labelledby="activity-heading">
       <h2 id="activity-heading" className="type-title">This week</h2>
       <p className="type-micro mt-1">{loading ? 'Loading activity…' : count ? `${count} active ${count === 1 ? 'day' : 'days'} in the last 7 days` : 'No submissions in the last 7 days'}</p>
       <div className="bundle-week-grid" aria-label="Submission activity for the last seven days">
@@ -90,12 +105,12 @@ function TopicSummary({ submissions, problems, loading }: { submissions: Submiss
   });
   const topics = [...activityCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
   return (
-    <section className="bundle-side-card surface" aria-labelledby="topic-summary-heading">
+    <section className="bundle-side-card surface a-compile" aria-labelledby="topic-summary-heading">
       <h2 id="topic-summary-heading" className="type-title">Recent topics</h2>
-      {loading ? <p className="type-small mt-2 text-[var(--color-muted)]">Loading recent topics…</p> : topics.length ? (
+      {loading ? <Loading label="Loading recent topics…" /> : topics.length ? (
         <ul className="bundle-topic-list">
-          {topics.map(([tag, count]) => (
-            <li key={tag}><span>{tag}</span><span className="type-micro">{count} {count === 1 ? 'submission' : 'submissions'}</span></li>
+          {topics.map(([tag, count], index) => (
+            <li key={tag} className="a-row" style={revealDelay(index)}><span>{tag}</span><span className="type-micro">{count} {count === 1 ? 'submission' : 'submissions'}</span></li>
           ))}
         </ul>
       ) : <p className="type-small mt-2 text-[var(--color-muted)]">Topic insights will appear after your first submission.</p>}
@@ -160,6 +175,22 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
   const starterSets = starterBundles(starterPage.data?.problemSets ?? []);
   const submissionsInRecentTopics = allSubmissions.length ? allSubmissions : (dashboard.data?.recentSubmissions ?? []).map((submission) => ({ ...submission, executor: null, completedAt: null, tags: [] }));
 
+  /* The status bar reports what is actually true right now — readiness from the health
+   * endpoint, the counts that were really returned, the filter that is really applied.
+   * It is not a footer, and it never says anything the page has not measured. */
+  const statusState = health.isError || problemSets.isError || history.isError
+    ? 'error'
+    : health.isLoading || problemSets.isLoading || history.isLoading
+      ? 'run'
+      : ready ? 'ok' : 'error';
+  const statusText = health.isError
+    ? 'grader unreachable'
+    : problemSets.isError || history.isError
+      ? 'some data unavailable'
+      : health.isLoading || problemSets.isLoading || history.isLoading
+        ? 'loading…'
+        : ready ? 'grader ready' : 'grader unavailable';
+
   return (
     <div className={workspaceMode ? 'bundle-dashboard-root' : 'flex flex-col gap-[var(--space-2xl)]'}>
       {!workspaceMode ? (
@@ -175,7 +206,7 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
         <div className="bundle-dashboard">
           <header className="bundle-dashboard-heading">
             <div>
-              <p className="bundle-eyebrow">YOUR LIBRARY</p>
+              <p className="bundle-eyebrow">{'/* your library */'}</p>
               <h1 className="bundle-destination-title">Your Bundle{dashboard.data?.user.username ? greetingName(dashboard.data.user.username) : ''}</h1>
               <p className="bundle-destination-subtitle">Pick up where you left off, or start something new.</p>
             </div>
@@ -185,11 +216,12 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
             </div>
           </header>
 
+          {/* The four figures are the top of the file, so they print in order. */}
           <section className="bundle-stats-grid" aria-label="Your progress">
-            <article className="bundle-stat surface"><span className="bundle-stat-number">{stats ? `${stats.solvedProblems} / ${stats.attemptedProblems}` : '—'}</span><span className="bundle-stat-label">Problems solved</span>{stats?.attemptedProblems ? <div className="bundle-stat-track"><span role="img" aria-label={`${Math.round(stats.solvedProblems / stats.attemptedProblems * 100)} percent solved`} style={{ '--bundle-progress': `${Math.round(stats.solvedProblems / stats.attemptedProblems * 100)}%` } as React.CSSProperties} /></div> : null}</article>
-            <article className="bundle-stat surface"><span className="bundle-stat-number">{stats?.completedSubmissions ?? '—'}</span><span className="bundle-stat-label">Submissions graded</span></article>
-            <article className="bundle-stat surface"><span className="bundle-stat-number">{stats ? stats.attemptedProblems ? `${Math.round(stats.solvedProblems / stats.attemptedProblems * 100)}%` : '—' : '—'}</span><span className="bundle-stat-label">Solve rate</span></article>
-            <article className="bundle-stat surface"><span className="bundle-stat-number">{stats ? stats.totalSubmissions : '—'}</span><span className="bundle-stat-label">Total submissions</span></article>
+            <article className="bundle-stat surface a-compile" style={revealDelay(0)}><span className="bundle-stat-number">{stats ? `${stats.solvedProblems} / ${stats.attemptedProblems}` : '—'}</span><span className="bundle-stat-label">Problems solved</span>{stats?.attemptedProblems ? <div className="bundle-stat-track"><span className="a-fill" role="img" aria-label={`${Math.round(stats.solvedProblems / stats.attemptedProblems * 100)} percent solved`} style={{ '--bundle-progress': `${Math.round(stats.solvedProblems / stats.attemptedProblems * 100)}%` } as React.CSSProperties} /></div> : null}</article>
+            <article className="bundle-stat surface a-compile" style={revealDelay(1)}><span className="bundle-stat-number">{stats?.completedSubmissions ?? '—'}</span><span className="bundle-stat-label">Submissions graded</span></article>
+            <article className="bundle-stat surface a-compile" style={revealDelay(2)}><span className="bundle-stat-number">{stats ? stats.attemptedProblems ? `${Math.round(stats.solvedProblems / stats.attemptedProblems * 100)}%` : '—' : '—'}</span><span className="bundle-stat-label">Solve rate</span></article>
+            <article className="bundle-stat surface a-compile" style={revealDelay(3)}><span className="bundle-stat-number">{stats ? stats.totalSubmissions : '—'}</span><span className="bundle-stat-label">Total submissions</span></article>
           </section>
 
           {continueData.isError ? <p role="status" className="type-small text-[var(--color-muted)]">Your recent problem could not be loaded.</p> : continueData.data ? <ContinueCard submissions={allSubmissions} /> : null}
@@ -198,7 +230,7 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
             <div className="bundle-dashboard-main">
               <section aria-labelledby="bundle-sets-heading">
                 <div className="bundle-section-heading"><h2 id="bundle-sets-heading" className="type-title">Problem sets</h2><span className="type-micro">Your private library</span></div>
-                {problemSets.isLoading ? <p className="type-small text-[var(--color-muted)]">Loading problem sets…</p> : problemSets.isError ? <p className="type-small text-[var(--color-fail)]">Problem sets could not be loaded: {(problemSets.error as Error).message}</p> : <ProblemSetSelector problemSets={problemSets.data?.problemSets ?? []} />}
+                {problemSets.isLoading ? <Loading label="Loading problem sets…" /> : problemSets.isError ? <p className="a-diag type-small text-[var(--color-fail)]">Problem sets could not be loaded: {(problemSets.error as Error).message}</p> : <ProblemSetSelector problemSets={problemSets.data?.problemSets ?? []} />}
                 {problemSets.data ? <Pagination total={problemSets.data.total} limit={problemSets.data.limit} offset={problemSets.data.offset} onPageChange={setSetsOffset} label="problem sets" /> : null}
               </section>
 
@@ -214,10 +246,22 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
                 <div className="bundle-filter-row" role="group" aria-label="Filter submissions">
                   {(['all', 'passed', 'failed'] as const).map((filter) => <button key={filter} type="button" className="bundle-filter" aria-pressed={submissionFilter === filter} onClick={() => { setSubmissionFilter(filter); setHistoryOffset(0); }}>{filter.charAt(0).toUpperCase() + filter.slice(1)}</button>)}
                 </div>
-                {history.isLoading ? <p className="type-small text-[var(--color-muted)]">Loading submissions…</p> : history.isError ? <p role="alert" className="type-small text-[var(--color-fail)]">Could not load submissions: {(history.error as Error).message}</p> : recentSubmissions.length ? <div className="bundle-history-surface surface"><ul className="bundle-history-list">{recentSubmissions.map((submission) => {
-                  const result = outcome(submission);
-                  return <li key={submission.id} className="bundle-history-row"><Link to={`/problems/${submission.problemId}`} className="bundle-history-link"><span className="bundle-history-title">{submission.problemTitle}</span><span className="type-micro">{formatDateTime(submission.createdAt)}</span></Link><div className="bundle-history-result"><span className={`bundle-outcome bundle-outcome--${result.kind}`}>{result.label}</span><span className="num type-small">{submission.passedCount} / {submission.totalCount}</span></div></li>;
-                })}</ul></div> : <p className="type-small text-[var(--color-muted)]">No {submissionFilter === 'all' ? '' : `${submissionFilter} `}submissions yet.</p>}
+                {history.isLoading ? <Loading label="Loading submissions…" /> : history.isError ? <p role="alert" className="a-diag type-small text-[var(--color-fail)]">Could not load submissions: {(history.error as Error).message}</p> : recentSubmissions.length ? (
+                  /* A graded run IS a listing: one line per attempt, numbered down the rail,
+                   * so the newest line is marked the way an editor marks the active one. */
+                  <div className="gutter" role="list">{recentSubmissions.map((submission, index) => {
+                    const result = outcome(submission);
+                    return <div key={submission.id} role="listitem" className="gutter-row a-line" data-active={index === 0 ? 'true' : undefined} style={revealDelay(index)}>
+                      <span className="gutter-ln">{index + 1}</span>
+                      <div className="gutter-body">
+                        <div className="bundle-history-row border-t-0 py-0">
+                          <Link to={`/problems/${submission.problemId}`} className="bundle-history-link"><span className="bundle-history-title">{submission.problemTitle}</span><span className="type-micro">{formatDateTime(submission.createdAt)}</span></Link>
+                          <div className="bundle-history-result"><span className={`bundle-outcome bundle-outcome--${result.kind}`}>{result.label}</span><span className="num type-small">{submission.passedCount} / {submission.totalCount}</span></div>
+                        </div>
+                      </div>
+                    </div>;
+                  })}</div>
+                ) : <p className="type-small text-[var(--color-muted)]">No {submissionFilter === 'all' ? '' : `${submissionFilter} `}submissions yet.</p>}
                 {history.data && history.data.total > history.data.limit && <Pagination total={history.data.total} limit={history.data.limit} offset={history.data.offset} onPageChange={setHistoryOffset} label="submissions" />}
               </section>
             </div>
@@ -240,9 +284,9 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
             Exam bundles
           </h2>
           {problemSets.isLoading ? (
-            <p className="type-small text-[var(--color-muted)]">Loading problem sets…</p>
+            <Loading label="Loading problem sets…" />
           ) : problemSets.isError ? (
-            <p className="type-small text-[var(--color-fail)]">
+            <p className="a-diag type-small text-[var(--color-fail)]">
               Problem sets could not be loaded: {(problemSets.error as Error).message}
             </p>
           ) : (
@@ -327,7 +371,7 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
               Recent submissions
             </h2>
             {history.isLoading ? (
-              <p className="type-small text-[var(--color-muted)]">Loading…</p>
+              <Loading label="Loading submissions…" />
             ) : (
               <>
                 <SubmissionHistory submissions={history.data?.submissions ?? []} />
@@ -345,6 +389,17 @@ export function DashboardPage({ workspaceMode = false }: { workspaceMode?: boole
           </section>
         </aside>
       </div> : null}
+
+      <div className="statusbar">
+        <span className="statusbar-item" data-strength="strong">learnc</span>
+        <span className="statusbar-item">{dashboard.data?.user.username ?? (guest ? 'guest session' : 'signed out')}</span>
+        <span className="statusbar-item">sets {problemSets.data ? `${problemSets.data.count}/${problemSets.data.total}` : '—'}</span>
+        <span className="statusbar-item">submissions {history.data ? `${history.data.count}/${history.data.total}` : '—'}</span>
+        <span className="statusbar-item">filter {submissionFilter}</span>
+        <span className="statusbar-spacer" />
+        <span className="statusbar-item">sandbox {sandbox?.kind ?? 'unknown'}</span>
+        <span className="statusbar-state" data-state={statusState}>{statusText}</span>
+      </div>
     </div>
   );
 }

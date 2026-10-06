@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, getQueryIdentity, type ProblemSetSummary } from '../../services/api';
+import { revealDelay } from '../../lib/reveal';
 
 /**
  * The set index is a ledger, not a card grid: one column, hairline-separated rows,
@@ -40,7 +41,11 @@ export function ProblemSetSelector({ problemSets }: { problemSets: ProblemSetSum
     <>
       <ul className="surface overflow-hidden">
         {problemSets.map((problemSet, index) => (
-          <li key={problemSet.id} className={`bundle-set-row ${index === 0 ? '' : 'bundle-set-row--divided'}`}>
+          <li
+            key={problemSet.id}
+            className={`a-row bundle-set-row ${index === 0 ? '' : 'bundle-set-row--divided'}`}
+            style={revealDelay(index)}
+          >
             <Link to={`/sets/${problemSet.id}`} className="bundle-set-link row-hover">
               <span className="row-title block text-[var(--text-body)] font-[var(--weight-strong)] text-[var(--color-ink)]">
                 {problemSet.title}
@@ -55,7 +60,7 @@ export function ProblemSetSelector({ problemSets }: { problemSets: ProblemSetSum
             {api.isAuthenticated() ? (
               <button
                 type="button"
-                className="btn btn-quiet shrink-0"
+                className="btn shrink-0"
                 disabled={publish.isPending}
                 onClick={() => publish.mutate({ id: problemSet.id, isPublic: !problemSet.isPublic })}
                 aria-label={`${problemSet.isPublic ? 'Unpublish' : 'Publish'} ${problemSet.title}`}
@@ -68,7 +73,7 @@ export function ProblemSetSelector({ problemSets }: { problemSets: ProblemSetSum
           </li>
         ))}
       </ul>
-      {message ? <p role="status" className="type-small mt-2">{message}</p> : null}
+      {message ? <p role="status" className="a-toast type-small mt-2">{message}</p> : null}
     </>
   );
 }

@@ -1,0 +1,592 @@
+/* tu-landing — concept: "learnc.c"
+ *
+ * The first-visit page is not a landing page, it is a C translation unit. The
+ * page you are reading is the file learnc.c, and the sign-in form is the body of
+ * int main(void) — the only function that runs.
+ *
+ * These are now ALIASES of the global tokens, not a private palette: the listing's
+ * three colours ARE the application's three colours, declared once in tokens.css.
+ * Nothing here restates a value, so the page cannot drift from the rest of the app,
+ * and a theme change reaches it through the same variables as every other surface.
+ *
+ * Palette — three colours, no syntax highlighting at all:
+ *   bone paper          the page
+ *   graphite ink        every glyph, including every line of code
+ *   vermilion signal    the compiler's opinion: diagnostics, and the one action
+ *
+ * The file is monochrome because the only colour on a printed listing is the
+ * ink of whoever marked it up. Vermilion is that pen. It never decorates.
+ */
+
+.tu {
+  --tu-ink: var(--color-ink);
+  --tu-ink-soft: var(--color-ink-soft);
+  --tu-ink-faint: var(--color-faint);
+  --tu-paper: var(--color-paper);
+  --tu-paper-sunk: var(--color-surface-2);
+  --tu-signal: var(--color-accent);
+  --tu-signal-lift: var(--color-accent-hover);
+  --tu-signal-ink: var(--color-accent-ink);
+  --tu-rule: var(--color-rule);
+  --tu-rule-soft: var(--color-rule);
+
+  --tu-mono: var(--font-mono);
+  --tu-human: var(--font-prose);
+
+  /* the file's line rhythm; every row is exactly this tall */
+  --tu-line: 2.25rem;
+  --tu-band: var(--gutter-width);
+  --tu-margin-col: 20.5rem;
+
+  --tu-ease: var(--ease-out);
+}
+
+/* ————— shell ————————————————————————————————————————————————— */
+
+.tu {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--tu-margin-col);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 100dvh;
+  background: var(--tu-paper);
+  color: var(--tu-ink);
+  font-family: var(--tu-mono);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  /* slashed zero: the one typographic tell that this is a machine's language */
+  font-feature-settings: 'zero' 1;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+
+/* ————— the code column ——————————————————————————————————————— */
+
+.tu-file {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  padding-block: clamp(2rem, 6vh, 4.5rem) 2rem;
+  overflow: hidden;
+}
+
+/* the gutter is a band of recessed paper, not a box around the content */
+.tu-file::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--tu-band);
+  background: var(--tu-paper-sunk);
+  border-inline-end: 1px solid var(--tu-rule-soft);
+}
+
+/* The code never wraps, never stretches: it keeps its natural measure, and the
+ * row's right edge becomes a real annotation column for trailing comments and
+ * the one action. */
+.tu-code {
+  position: relative;
+  z-index: 1;
+}
+
+/* A row is the fundamental unit: gutter column, then the line itself. The number
+ * is a real grid cell, so it stays level with its line even when the line wraps. */
+.tu-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--tu-band) minmax(0, 1fr);
+  align-items: center;
+  min-height: var(--tu-line);
+}
+
+.tu-ln {
+  padding-inline-end: 1rem;
+  text-align: end;
+  font-size: 0.6875rem;
+  line-height: var(--tu-line);
+  color: var(--tu-ink-faint);
+  user-select: none;
+  transition: color 160ms var(--tu-ease);
+}
+
+/* the writer's position: a hard block in the gutter, the way an editor marks it */
+.tu-row[data-active='true'] .tu-ln {
+  color: var(--tu-signal);
+}
+
+.tu-row[data-active='true']::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.2rem;
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--tu-signal);
+}
+
+.tu-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  /* capped so the action never drifts unreachably far from its statement */
+  max-inline-size: 68rem;
+  padding-inline-end: 1.25rem;
+}
+
+/* A declaration's value is transparent to the row on wide screens, so it sets
+ * inline as `= value;`. On narrow screens it becomes a line of its own. */
+.tu-value {
+  display: contents;
+}
+
+/* pre-wrap, not pre: a code line keeps its leading indent and its spacing, but a
+ * line that genuinely cannot fit wraps instead of pushing the page sideways. */
+.tu-code-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.tu-empty {
+  min-height: var(--tu-line);
+}
+
+/* ————— the file's language ——————————————————————————————————— */
+
+.tu-cmt {
+  color: var(--tu-ink-faint);
+}
+
+.tu-h1 {
+  margin: 0;
+  display: block;
+  font-family: var(--tu-mono);
+  font-weight: 700;
+  /* mono at display scale is the whole type idea: the machine raises its voice */
+  font-size: clamp(1.9rem, 4.1vw, 3.4rem);
+  line-height: 1.06;
+  letter-spacing: -0.045em;
+  color: var(--tu-ink);
+  text-wrap: balance;
+}
+
+.tu-decl {
+  flex: 0 0 auto;
+  color: var(--tu-ink-soft);
+  white-space: pre;
+}
+
+/* inputs are the value half of a declaration: `char pass[64] = ____;` */
+.tu-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-inline-size: 21rem;
+  height: 1.9rem;
+  padding: 0 0.35rem;
+  border: 0;
+  border-bottom: 1px solid var(--tu-rule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tu-ink);
+  font: inherit;
+  letter-spacing: 0.02em;
+  transition: border-color 160ms var(--tu-ease), background-color 160ms var(--tu-ease);
+}
+
+.tu-input::placeholder {
+  color: var(--tu-ink-faint);
+  opacity: 1;
+}
+
+.tu-input:hover {
+  border-bottom-color: var(--tu-ink-faint);
+}
+
+.tu-input:focus {
+  outline: none;
+  border-bottom-color: var(--tu-signal);
+  background: color-mix(in oklab, var(--tu-signal) 7%, transparent);
+}
+
+.tu-input:focus-visible {
+  outline: 2px solid var(--tu-signal);
+  outline-offset: 3px;
+}
+
+.tu-input[aria-invalid='true'] {
+  border-bottom-color: var(--tu-signal);
+}
+
+.tu-term {
+  color: var(--tu-ink);
+}
+
+/* The page carries its own stylesheet, so it never borrows an app utility. */
+.tu-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.tu-tail {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* the insertion point — a terminal block, stepping, never easing */
+/* The insertion point comes from the shared motion library, so the landing's caret and
+ * every other caret in the app step on exactly the same clock. */
+.tu-caret {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 1.05rem;
+  background: var(--tu-signal);
+  animation: a-blink var(--dur-caret) steps(1, end) infinite;
+}
+
+.tu-caret[hidden] {
+  display: none;
+}
+
+/* ————— the one action ———————————————————————————————————————— */
+
+.tu-run {
+  flex: 0 0 auto;
+  height: var(--tu-line);
+  padding-inline: 1.35rem;
+  border: 0;
+  /* A machine key, not a friendly pill. */
+  border-radius: var(--radius-control);
+  background: var(--tu-signal);
+  color: var(--tu-signal-ink);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background-color 140ms var(--tu-ease), translate 140ms var(--tu-ease);
+}
+
+.tu-run:hover:not(:disabled) {
+  background: var(--tu-signal-lift);
+  translate: 0 -1px;
+}
+
+.tu-run:active:not(:disabled) {
+  translate: 0 1px;
+}
+
+.tu-run:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.tu-quiet {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tu-ink-soft);
+  font: inherit;
+  text-decoration: underline dotted var(--tu-rule);
+  text-underline-offset: 0.28em;
+  cursor: pointer;
+}
+
+.tu-quiet:hover:not(:disabled) {
+  color: var(--tu-ink);
+  text-decoration-color: var(--tu-signal);
+}
+
+.tu-quiet:disabled {
+  color: var(--tu-ink-faint);
+  cursor: not-allowed;
+}
+
+/* ————— diagnostics ————————————————————————————————————————— */
+
+/* the failing line under main(): the compiler's own sentence, in the margin of
+ * the code, exactly one row tall so nothing below it moves. */
+.tu-diag {
+  min-width: 0;
+  color: var(--tu-signal);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The shared diagnostic effect, not a private one: it arrives without hiding its own
+   * text, which the local opacity fade used to do. */
+  animation: a-diag var(--dur-short) steps(3, end) backwards;
+}
+
+/* ————— the human margin ———————————————————————————————————— */
+
+/* Everything in the code column is the machine speaking. The margin is where a
+ * person speaks, so it is set in the one proportional face on the page. */
+.tu-margin {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: clamp(2rem, 6vh, 4.5rem) 1.75rem 2rem;
+  border-inline-start: 1px solid var(--tu-rule-soft);
+  font-family: var(--tu-human);
+}
+
+.tu-note {
+  margin: 0;
+  color: var(--tu-ink-soft);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+}
+
+.tu-log {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--tu-rule-soft);
+}
+
+.tu-log-head {
+  font-family: var(--tu-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  color: var(--tu-ink-faint);
+}
+
+.tu-log-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  font-family: var(--tu-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--tu-ink-soft);
+  scrollbar-width: thin;
+}
+
+.tu-log-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tu-log-line[data-kind='prompt'] {
+  color: var(--tu-ink);
+}
+
+.tu-log-line[data-kind='fail'] {
+  color: var(--tu-signal);
+}
+
+.tu-log-backlog {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--tu-rule-soft);
+  margin-top: auto;
+}
+
+.tu-log-question {
+  font-family: var(--tu-mono);
+  font-size: 0.75rem;
+  color: var(--tu-ink-faint);
+}
+
+.tu-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tu-ink);
+  font-family: var(--tu-mono);
+  font-size: 0.875rem;
+  text-decoration: underline;
+  text-decoration-color: var(--tu-rule);
+  text-underline-offset: 0.28em;
+  cursor: pointer;
+}
+
+.tu-link:hover {
+  text-decoration-color: var(--tu-signal);
+}
+
+/* ————— status bar ————————————————————————————————————————— */
+
+/* the editor's own chrome. It reports the page's real state, not decoration. */
+.tu-status {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-height: var(--tu-line);
+  padding-inline: 0.5rem 0.75rem;
+  border-top: 1px solid var(--tu-rule);
+  background: var(--tu-paper-sunk);
+  color: var(--tu-ink-faint);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+
+.tu-status-item {
+  white-space: nowrap;
+}
+
+.tu-status-item[data-strength='strong'] {
+  color: var(--tu-ink-soft);
+}
+
+.tu-status-spacer {
+  flex: 1 1 auto;
+}
+
+.tu-status-state {
+  color: var(--tu-ink-soft);
+}
+
+.tu-status-state[data-state='error'] {
+  color: var(--tu-signal);
+}
+
+/* ————— narrow ——————————————————————————————————————————————— */
+
+/* Short desktop windows: compress the line rhythm so all 17 lines fit. */
+@media (min-width: 1001px) and (max-height: 820px) {
+  .tu {
+    --tu-line: 1.95rem;
+  }
+
+  .tu-file {
+    padding-block: 1.5rem;
+  }
+
+  .tu-margin {
+    padding: 1.5rem 1.75rem;
+  }
+}
+
+@media (max-width: 1000px) {
+  /* one column, and the status bar takes a row of its own — it must not land on
+   * top of the margin. */
+  .tu {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+  }
+
+  .tu-file {
+    grid-row: 1;
+  }
+
+  .tu-margin {
+    grid-column: 1;
+    grid-row: 2;
+    gap: 1.25rem;
+    padding: 1.75rem 1.5rem 2rem 1.5rem;
+    border-inline-start: 0;
+    border-top: 1px solid var(--tu-rule-soft);
+  }
+
+  .tu-status {
+    grid-row: 3;
+  }
+
+  .tu-log-backlog {
+    margin-top: 0.5rem;
+  }
+
+  .tu-log-body {
+    max-height: 9rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .tu {
+    --tu-band: 2.6rem;
+    --tu-line: 2.5rem;
+  }
+
+  .tu-row {
+    align-items: start;
+  }
+
+  /* The number has to sit level with the FIRST line of a row that now wraps, so
+   * its line box is matched to the body's (0.9375rem x 1.55). */
+  .tu-ln {
+    padding-inline-end: 0.7rem;
+    font-size: 0.625rem;
+    line-height: 1.45rem;
+  }
+
+  .tu-body {
+    gap: 0.4rem;
+    padding-inline-end: 0.75rem;
+  }
+
+  /* the declaration name takes one line, its value the next */
+  .tu-decl {
+    flex: 1 1 100%;
+  }
+
+  .tu-value {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .tu-input {
+    flex: 1 1 auto;
+    width: auto;
+    max-inline-size: none;
+  }
+
+  /* the action column moves under its statement instead of off the edge */
+  .tu-tail {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .tu-run {
+    flex: 1 1 auto;
+  }
+
+  .tu-h1 {
+    font-size: clamp(1.65rem, 8.4vw, 2.3rem);
+  }
+
+  .tu-hide-narrow {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tu-caret {
+    animation: none;
+  }
+
+  .tu-diag {
+    animation: none;
+  }
+
+  .tu-run,
+  .tu-row::before {
+    transition: none;
+  }
+}

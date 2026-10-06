@@ -23,7 +23,7 @@ export function EdgeToggle({
       aria-label={open ? `Collapse ${side} panel` : `Expand ${side} panel`}
       aria-expanded={open}
       title={open ? 'Collapse panel' : 'Expand panel'}
-      className={`group absolute top-1/2 z-[calc(var(--z-raised)+1)] flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)] shadow-[0_2px_10px_oklch(20%_0.02_250_/_0.25)] transition-transform duration-300 hover:scale-110 ${
+      className={`group absolute top-1/2 z-[calc(var(--z-raised)+1)] flex size-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius-control)] border border-[var(--color-rule)] bg-[var(--color-paper)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-hairline)] hover:text-[var(--color-ink)] ${
         side === 'left' ? '-left-3' : '-right-3'
       }`}
     >
@@ -36,7 +36,7 @@ export function EdgeToggle({
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ transform: rotation, transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}
+        style={{ transform: rotation, transition: 'transform var(--dur-short) var(--ease-out)' }}
         aria-hidden
       >
         <path d="M6 3.5 10.5 8 6 12.5" />

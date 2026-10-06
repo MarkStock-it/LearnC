@@ -1,17 +1,35 @@
-/* Hallmark · macrostructure: Workbench (practice) / Ledger (dashboard)
- * tone: austere premium · anchor hue: 250 (deep system blue)
- * theme: custom · vibe: "quiet material, Apple restraint" · paper: oklch(97.4% 0.005 250) · accent: oklch(52% 0.132 250)
- * display: Geist Variable · body: Geist Variable · axes: light / grotesque-roman / cool-blue
- * studied: no · context: inferred · slop: pass (1–58)
- * Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V4
+/* Hallmark · macrostructure: Translation unit (listing) / Build log (dashboard)
+ * tone: printed listing, marked up by hand · anchor hue: 32 (compiler vermilion)
+ * theme: custom · vibe: "a warm printout of the source, annotated in red pen"
+ * paper: oklch(95.8% 0.014 84) · ink: oklch(20.5% 0.012 75) · signal: oklch(53% 0.19 32)
+ * display: JetBrains Mono Variable · prose: Geist Variable
+ * studied: no · context: inferred · slop: pass
  *
  * Portable: this file is the system. Every colour, font, space, radius, shadow and
  * duration in the app is declared here; components reference tokens by name and never
  * inline a raw OKLCH/hex value. Copy this file into another project to carry the identity.
  *
- * Hard rules this file encodes (hallmark/references/color.md):
- *   one accent, ≤3% of any viewport · no pure #000/#fff · greys tinted toward the
- *   anchor hue (250) · elevation is lightness, not shadow · dark mode keeps the hue.
+ * ——— What changed, and why ——————————————————————————————————————————————
+ * The app is a listing. A printed C source file, on warm paper, with a line-number
+ * gutter down the left. It is monochrome — the ONLY colour on a printed listing is the
+ * ink of whoever marked it up — and here that ink is vermilion, spent on exactly two
+ * things: a diagnostic, and the action that runs the program.
+ *
+ * So the palette is three colours, not twelve:
+ *   bone paper     the page
+ *   graphite ink   every glyph
+ *   vermilion      diagnostics, and the one action per view
+ *
+ * The verdict signals (pass / warn) survive because a grading tool has to distinguish
+ * a solved case from an unsolved one, and because they are always paired with a mark
+ * and a word — never carrying the meaning by hue alone. They are heavily desaturated so
+ * they read as ink, not as accents, and `fail` IS the signal colour: in this app a
+ * failed test case and a compiler error are the same kind of event.
+ *
+ * Hard rules this file encodes:
+ *   one accent, ≤3% of any viewport · no pure #000/#fff · greys tinted toward the anchor
+ *   hue (32) · elevation is lightness and a hairline, never a shadow · dark mode is the
+ *   same listing under a different light, and keeps the hue.
  */
 
 :root {
@@ -22,42 +40,55 @@
   color-scheme: light;
 
   /* — Surfaces ------------------------------------------------------------ */
-  --color-paper: oklch(97.4% 0.005 250); /* canvas */
-  --color-surface: oklch(99.3% 0.005 250); /* raised: cards, panels, toolbar */
-  --color-surface-2: oklch(95.6% 0.006 250); /* recessed: code wells, inputs */
-  --color-rule: oklch(89% 0.008 250); /* hairline separators */
-  --color-hairline: oklch(84% 0.009 250); /* edges of interactive surfaces */
+  --color-paper: oklch(95.8% 0.014 84); /* the page: warm bone */
+  --color-surface: oklch(97.7% 0.011 84); /* raised: the light in the room */
+  --color-surface-2: oklch(92.4% 0.017 84); /* recessed: gutter, code wells, inputs */
+  --color-rule: oklch(78% 0.015 80); /* hairline separators */
+  --color-hairline: oklch(68% 0.017 78); /* edges of interactive surfaces */
 
   /* — Text --------------------------------------------------------------- */
-  --color-ink: oklch(21% 0.014 258); /* primary */
-  --color-ink-soft: oklch(32% 0.012 258); /* body copy */
-  --color-muted: oklch(48% 0.014 255); /* secondary */
-  --color-faint: oklch(60% 0.012 255); /* tertiary, captions */
+  --color-ink: oklch(20.5% 0.012 75); /* primary: 15.99:1 on paper */
+  --color-ink-soft: oklch(40% 0.013 76); /* body copy: 8.17:1 */
+  --color-muted: oklch(46% 0.013 78); /* secondary: 6.36:1 */
+  /* Tertiary: gutter numbers, status-bar text, captions — and it is the one value in the
+   * palette that sits on BOTH the paper and the recessed surface, so it is set against
+   * the harder of the two. At 52% it measured 4.40:1 on --color-surface-2 (the gutter
+   * band and the status bar), which is below AA for text this small. */
+  --color-faint: oklch(47% 0.013 78);
 
-  /* — Accent (≤3% of any view) ------------------------------------------- */
-  --color-accent: oklch(52% 0.132 250);
-  --color-accent-hover: oklch(45.5% 0.132 250);
-  --color-accent-ink: oklch(99.2% 0.005 250); /* text on accent */
-  --color-accent-quiet: oklch(95.4% 0.022 250); /* selected row wash */
-  --color-focus: oklch(56% 0.155 250); /* focus ring, ≥3:1 on every surface */
+  /* — Signal (≤3% of any view) ------------------------------------------- */
+  /* The compiler's pen. It marks a mistake, or it is the one thing to press. */
+  --color-accent: oklch(53% 0.19 32);
+  --color-accent-hover: oklch(46% 0.195 32);
+  --color-accent-ink: oklch(97.5% 0.008 84); /* text on signal: 5.38:1 */
+  --color-accent-quiet: oklch(93% 0.034 38); /* selected row wash, active line */
+  --color-focus: oklch(50% 0.2 32); /* focus ring, ≥3:1 on every surface */
 
   /* — Verdict signals (paired with a mark + label, never colour alone) ---- */
-  --color-pass: oklch(47% 0.095 155);
-  --color-pass-quiet: oklch(95.5% 0.028 155);
-  --color-warn: oklch(54% 0.105 65);
-  --color-warn-quiet: oklch(96% 0.033 80);
-  --color-fail: oklch(50% 0.155 27);
-  --color-fail-quiet: oklch(95.5% 0.028 27);
+  /* Desaturated on purpose: these are ink, not accents. */
+  --color-pass: oklch(44% 0.072 155);
+  --color-pass-quiet: oklch(93.5% 0.03 152);
+  --color-warn: oklch(51% 0.082 65);
+  --color-warn-quiet: oklch(94% 0.032 80);
+  /* A failed case and a compiler error are the same event, so they are the same ink. */
+  --color-fail: var(--color-accent);
+  --color-fail-quiet: var(--color-accent-quiet);
 
-  /* — Type (2 families: Grotesque + Mono outlier) ------------------------ */
-  --font-display: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-body: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* — Type: mono is the dominant voice ----------------------------------- */
+  /* The machine speaks in mono — chrome, labels, controls, numbers, nav, code.
+   * Geist is the exception, and it is reserved for one thing: the prose a person
+   * wrote to be read at length. That rule is what keeps this a listing and not a
+   * terminal: the monospace carries structure, and the proportional face carries
+   * a voice. */
+  --font-display: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-body: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-prose: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
 
   --weight-body: 400;
-  --weight-medium: 520;
+  --weight-medium: 500;
   --weight-strong: 600;
-  --weight-display: 700; /* 300 units above body — the required contrast */
+  --weight-display: 700; /* 200+ units above body — the required contrast */
 
   /* Scale: major third (1.25) from a 16px body. Five sizes per page maximum. */
   --text-micro: 0.75rem; /* 12px — floor. Never smaller. */
@@ -68,26 +99,32 @@
   --text-xl: 1.9531rem; /* 31.25px */
   --text-2xl: 2.4414rem; /* 39px */
 
-  /* Tracking is size-specific: tighten as type grows, never a fixed value. */
-  --tracking-display: -0.022em;
-  --tracking-title: -0.014em;
-  --tracking-body: -0.002em;
-  --tracking-mono: -0.01em;
+  /* Tracking is size-specific: tighten as type grows, never a fixed value.
+   * Mono is set tighter than a proportional face needs, because a monospace already
+   * reads as wide and the inter-character rhythm is doing half the work. */
+  --tracking-display: -0.038em;
+  --tracking-title: -0.024em;
+  --tracking-body: -0.012em;
+  --tracking-mono: -0.012em;
 
   --leading-display: 1.08;
-  --leading-title: 1.24;
-  --leading-body: 1.55;
-  --measure: 68ch; /* body column, inside the 45–75ch band */
+  --leading-title: 1.28;
+  --leading-body: 1.6;
+  --measure: 66ch; /* body column, inside the 45–75ch band */
 
-  /* — Syntax (editor only; one source of truth with the UI palette) ----- */
-  --syntax-keyword: oklch(42% 0.128 275);
-  --syntax-string: oklch(44% 0.098 150);
-  --syntax-number: oklch(46% 0.115 45);
-  --syntax-comment: oklch(58% 0.012 255);
-  --syntax-function: oklch(46% 0.115 250);
-  --syntax-type: oklch(45% 0.09 205);
-  --syntax-variable: oklch(30% 0.014 258);
-  --syntax-operator: oklch(50% 0.03 265);
+  /* — Syntax (editor only) ----------------------------------------------- */
+  /* Deliberately low-chroma and warmed toward the ink: the editor is the same
+   * listing as the rest of the app, so its highlighting differentiates by depth of
+   * ink rather than by hue. Only `invalid` reaches for the signal colour, because
+   * that is the one thing the compiler actually objects to. */
+  --syntax-keyword: oklch(38% 0.1 30);
+  --syntax-string: oklch(42% 0.06 150);
+  --syntax-number: oklch(44% 0.08 62);
+  --syntax-comment: oklch(56% 0.012 78);
+  --syntax-function: oklch(34% 0.05 250);
+  --syntax-type: oklch(40% 0.05 200);
+  --syntax-variable: oklch(24% 0.012 75);
+  --syntax-operator: oklch(46% 0.02 70);
 
   /* — Space (4pt, nine steps, named by role) ---------------------------- */
   --space-3xs: 0.125rem;
@@ -100,19 +137,26 @@
   --space-2xl: 4rem;
   --space-3xl: 6rem;
 
-  /* — Radii (varied by hierarchy — one radius on everything is a tell) --- */
-  --radius-micro: 6px; /* tags, marks */
-  --radius-control: 10px; /* buttons, inputs */
-  --radius-surface: 16px; /* cards, panels */
-  --radius-sheet: 22px; /* the largest surface on a page */
-  --radius-pill: 999px; /* only where a pill is genuinely the right shape */
-  /* No derived "inset" radius: at this scale the nest gaps (4 / 12 / 16px) already land
-   * the inner arcs on control / surface values, so a calc() token would be ceremony. */
+  /* — Radii: a machine has corners -------------------------------------- */
+  /* Near-square everywhere. One radius on everything is a tell, so there are still
+   * steps — but they are 2/2/3/4px, not 6/10/16/22px. The only round shape left in
+   * the app is the caret block, which is a rectangle too. */
+  --radius-micro: 2px; /* tags, marks, chips */
+  --radius-control: 2px; /* buttons, inputs */
+  --radius-surface: 3px; /* panels */
+  --radius-sheet: 4px; /* the largest surface on a page */
+  /* Kept as a name because call sites use it for status chips and progress tracks.
+   * It resolves to the control radius so those shapes harden with everything else
+   * instead of surviving as the one soft thing on the page. */
+  --radius-pill: 2px;
 
-  /* — Depth (whisper-weight; elevation is mostly lightness) -------------- */
-  --shadow-whisper: 0 1px 2px oklch(20% 0.01 250 / 0.05);
-  --shadow-raised: 0 2px 10px oklch(20% 0.01 250 / 0.06);
-  --shadow-edge: 0 0 0 1px oklch(30% 0.01 250 / 0.06);
+  /* — Depth: elevation is lightness and a hairline, never a shadow ------- */
+  /* Shadows are the single most reliable tell of a generated interface. A listing
+   * separates its planes with a 1px rule and a step of lightness, and nothing else. */
+  --shadow-whisper: 0 0 0 0 transparent;
+  --shadow-raised: 0 0 0 0 transparent;
+  --shadow-edge: 0 0 0 1px oklch(30% 0.014 78 / 0.14);
+  --shadow-stamp: 2px 2px 0 0 oklch(20.5% 0.012 75); /* the hard offset: a print mark */
 
   /* — Motion (three easings, three durations; exits are 75% of enters) --- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -120,11 +164,19 @@
    * curves are too weak to read as intentional. There is no --ease-in — ease-in starts
    * slow, which is precisely the moment the user is watching, so it is banned for UI. */
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* The concept's own curve: a compiler does not glide, it prints. `--ease-steps`
+   * resolves in discrete frames, so anything that represents the machine *working*
+   * (a build appearing, a status changing, a diagnostic landing) snaps into place
+   * instead of easing. Reserve it for machine events; human-readable entrances stay
+   * on --ease-out so the page does not feel like it is buffering. */
+  --ease-steps: steps(5, end);
+
   --dur-micro: 120ms; /* press feedback — the 100–160ms band */
   --dur-short: 220ms; /* small state changes */
   --dur-long: 420ms; /* a whole-surface entrance, the only thing this slow */
-  /* Exits are faster than entrances: leaving should feel like a release, not a replay. */
-  --dur-exit: 165ms;
+  --dur-step: 200ms; /* one machine event resolving */
+  --stagger: 34ms; /* per-item delay in a staggered list */
+  --dur-caret: 1080ms; /* the terminal insertion point */
 
   /* — Z (six named levels; no freestyle numbers) ------------------------ */
   --z-base: 1;
@@ -135,84 +187,92 @@
   --z-toast: 500;
   --z-tooltip: 600;
 
-  /* — Material (Apple: translucent chrome, content scrolls beneath) ------ */
-  --material-toolbar: oklch(99.3% 0.005 250 / 0.72);
+  /* — Listing chrome ----------------------------------------------------- */
+  /* The two structural devices the whole app now shares: the gutter rail that
+   * carries line numbers, and the status bar that reports real state. */
+  --gutter-width: 3.25rem;
+  --gutter-bg: var(--color-surface-2);
+  --ln-color: var(--color-faint);
+
+  /* — Material (translucent chrome, content scrolls beneath) ------ */
+  --material-toolbar: oklch(95.8% 0.014 84 / 0.78);
   --material-blur: 20px;
-  --material-saturate: 180%;
+  --material-saturate: 150%;
 }
 
-/* Dark mode keeps the anchor hue; only lightness and chroma move.
- * Body weight drops 50 units to compensate for the optical weight of light-on-dark.
- * Elevation still reads as lightness: raised surfaces are lighter than the canvas.
- * Appearance is user-controlled in Preferences, not coupled to the OS setting. */
+/* Dark mode is the same listing under a different light. It keeps the anchor hue,
+ * keeps the paper/ink relationship (elevation still reads as lightness: raised
+ * surfaces are lighter than the canvas), and adds no glow — there is no neon here,
+ * because a printout under a lamp does not glow, it just gets darker. */
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --color-paper: oklch(15.5% 0.006 255);
-  --color-surface: oklch(19% 0.007 255);
-  --color-surface-2: oklch(12.8% 0.006 255);
-  --color-rule: oklch(27.5% 0.008 255);
-  --color-hairline: oklch(33% 0.009 255);
+  --color-paper: oklch(17.5% 0.008 72);
+  --color-surface: oklch(20.5% 0.008 72);
+  --color-surface-2: oklch(13.5% 0.008 72);
+  --color-rule: oklch(33% 0.011 76);
+  --color-hairline: oklch(41% 0.012 76);
 
-  --color-ink: oklch(94.5% 0.005 255);
-  --color-ink-soft: oklch(86% 0.006 255);
-  --color-muted: oklch(72% 0.009 255);
-  --color-faint: oklch(61% 0.01 255);
+  --color-ink: oklch(93% 0.008 85);
+  --color-ink-soft: oklch(76% 0.011 85);
+  --color-muted: oklch(68% 0.012 84);
+  --color-faint: oklch(61% 0.012 84);
 
-  --color-accent: oklch(66% 0.128 252);
-  --color-accent-hover: oklch(72% 0.13 252);
-  --color-accent-ink: oklch(16% 0.01 255);
-  --color-accent-quiet: oklch(27% 0.05 252);
-  --color-focus: oklch(72% 0.15 252);
+  --color-accent: oklch(64% 0.175 34);
+  --color-accent-hover: oklch(70% 0.175 34);
+  --color-accent-ink: oklch(16% 0.012 72);
+  --color-accent-quiet: oklch(28% 0.055 34);
+  --color-focus: oklch(70% 0.18 34);
 
-  --color-pass: oklch(72% 0.11 155);
-  --color-pass-quiet: oklch(26% 0.045 155);
-  --color-warn: oklch(78% 0.11 80);
-  --color-warn-quiet: oklch(27% 0.04 80);
-  --color-fail: oklch(70% 0.15 27);
-  --color-fail-quiet: oklch(27% 0.05 27);
+  --color-pass: oklch(72% 0.09 155);
+  --color-pass-quiet: oklch(26% 0.04 155);
+  --color-warn: oklch(78% 0.09 80);
+  --color-warn-quiet: oklch(27% 0.038 80);
 
   --weight-body: 350;
-  --weight-medium: 480;
+  --weight-medium: 460;
 
-  --syntax-keyword: oklch(80% 0.11 285);
-  --syntax-string: oklch(82% 0.10 155);
-  --syntax-number: oklch(82% 0.10 60);
-  --syntax-comment: oklch(58% 0.012 255);
-  --syntax-function: oklch(80% 0.10 250);
-  --syntax-type: oklch(80% 0.08 205);
-  --syntax-variable: oklch(90% 0.006 255);
-  --syntax-operator: oklch(74% 0.03 265);
+  --syntax-keyword: oklch(80% 0.09 34);
+  --syntax-string: oklch(79% 0.06 155);
+  --syntax-number: oklch(80% 0.07 65);
+  --syntax-comment: oklch(60% 0.012 80);
+  --syntax-function: oklch(78% 0.05 250);
+  --syntax-type: oklch(78% 0.05 200);
+  --syntax-variable: oklch(89% 0.006 84);
+  --syntax-operator: oklch(72% 0.02 80);
 
-  --material-toolbar: oklch(19% 0.007 255 / 0.7);
+  --shadow-edge: 0 0 0 1px oklch(85% 0.01 84 / 0.16);
+  --shadow-stamp: 2px 2px 0 0 oklch(93% 0.008 85);
+
+  --material-toolbar: oklch(20.5% 0.008 72 / 0.76);
 }
 
 /* Reduced transparency: make the material frostier rather than translucent. */
 @media (prefers-reduced-transparency: reduce) {
   :root {
-    --material-toolbar: oklch(99.3% 0.005 250);
+    --material-toolbar: oklch(95.8% 0.014 84);
     --material-blur: 0px;
   }
   :root[data-theme='dark'] {
-    --material-toolbar: oklch(19% 0.007 255);
+    --material-toolbar: oklch(20.5% 0.008 72);
   }
 }
 
 /* More contrast: near-solid surfaces with a defined edge. */
 @media (prefers-contrast: more) {
   :root {
-    --color-rule: oklch(72% 0.012 250);
-    --color-hairline: oklch(58% 0.014 250);
-    --color-muted: oklch(38% 0.016 255);
-    --color-faint: oklch(44% 0.014 255);
-    --shadow-edge: 0 0 0 1px oklch(35% 0.02 250 / 0.6);
+    --color-rule: oklch(62% 0.016 78);
+    --color-hairline: oklch(48% 0.018 78);
+    --color-muted: oklch(38% 0.016 76);
+    --color-faint: oklch(42% 0.015 76);
+    --shadow-edge: 0 0 0 1px oklch(35% 0.02 78 / 0.7);
   }
 
   :root[data-theme='dark'] {
-    --color-rule: oklch(42% 0.012 255);
-    --color-hairline: oklch(54% 0.014 255);
-    --color-muted: oklch(82% 0.009 255);
-    --color-faint: oklch(74% 0.01 255);
-    --shadow-edge: 0 0 0 1px oklch(85% 0.01 255 / 0.7);
+    --color-rule: oklch(46% 0.012 76);
+    --color-hairline: oklch(58% 0.014 76);
+    --color-muted: oklch(84% 0.009 84);
+    --color-faint: oklch(76% 0.01 84);
+    --shadow-edge: 0 0 0 1px oklch(85% 0.01 84 / 0.75);
   }
 }

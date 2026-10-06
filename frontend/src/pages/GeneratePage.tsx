@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, api, getQueryIdentity, getStudentName, isLoggedIn, type GenerateResponse, type MeResponse } from '../services/api';
+import { revealDelay } from '../lib/reveal';
 
 const TOPIC_SUGGESTIONS = ['loops', 'arrays', 'strings', 'pointers', 'functions', 'recursion', 'matrices', 'file I/O'];
 
@@ -86,14 +87,19 @@ export function GeneratePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
+  /* Whether the last draft write failed. Tracked as state rather than sniffed from the
+   * status string, because the announcement below depends on it being exact. */
+  const [draftFailed, setDraftFailed] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
         window.localStorage.setItem(draftStorageKey, JSON.stringify({ difficulty, topics, problemCount, instructions, quizTitle, geminiModel } satisfies QuizDraft));
         setDraftStatus('Draft saved');
+        setDraftFailed(false);
       } catch {
         setDraftStatus('Draft could not be saved');
+        setDraftFailed(true);
       }
     }, 250);
     setDraftStatus('Saving draft…');
@@ -153,8 +159,10 @@ export function GeneratePage() {
     try {
       window.localStorage.removeItem(draftStorageKey);
       setDraftStatus('Default settings restored');
+      setDraftFailed(false);
     } catch {
       setDraftStatus('Draft could not be cleared');
+      setDraftFailed(true);
     }
   };
 
@@ -208,10 +216,29 @@ export function GeneratePage() {
   const estimatedMinutes = problemCount * ({ easy: 10, medium: 20, hard: 30 } as const)[difficulty];
   const titleInvalid = quizTitle.trim().length > 0 && quizTitle.trim().length < 3;
 
+  /* The status bar reports what is actually true about this build: which engine will
+   * run, what it was asked for, and where the request currently is. Nothing on this
+   * line is decoration. */
+  const buildState = busy ? 'run' : error ? 'error' : result ? 'ok' : 'idle';
+  const buildText = busy
+    ? `compiling ${problemCount} problem${problemCount === 1 ? '' : 's'}…`
+    : error
+      ? 'exit 1 · generation failed'
+      : result
+        ? `linked · ${result.count} problem${result.count === 1 ? '' : 's'}`
+        : 'awaiting input';
+  const providerLabel = settingsLoading
+    ? 'checking provider'
+    : usingOwnKey
+      ? GEMINI_MODELS.find((model) => model.id === geminiModel)?.label ?? 'Gemini key'
+      : canGenerate
+        ? 'server model'
+        : 'no provider';
+
   return (
     <section className="quiz-builder">
       <header className="quiz-builder-heading">
-        <p className="bundle-eyebrow">PRACTICE SETUP</p>
+        <p className="bundle-eyebrow">{'/* practice setup */'}</p>
         <h1 className="type-display">New practice quiz</h1>
         <p className="type-lede measure">Pick what you want to practice. We’ll build a focused set of C problems.</p>
       </header>
@@ -384,7 +411,10 @@ export function GeneratePage() {
               placeholder="For example: use structs, avoid recursion, or use a real-world scenario."
               className="field w-full resize-y"
             />
-            <div className="quiz-field-heading"><span className="type-micro">Suggestions</span><span className="num type-micro" aria-live="polite">{instructions.length}/400</span></div>
+            <div className="quiz-field-heading"><span className="type-micro">Suggestions</span>{/* No aria-live: this changes on every keystroke, so a polite region reads out
+                "1/400", "2/400", "3/400" … for the whole sentence. The limit is still
+                discoverable through the field's maxLength. */}
+            <span className="num type-micro">{instructions.length}/400</span></div>
             <div className="quiz-request-ideas" role="group" aria-label="Request suggestions">
               {['Use a real-world scenario', 'Focus on edge cases', 'Avoid recursion', 'Add helpful hints'].map((idea) => (
                 <button key={idea} type="button" className="quiz-suggestion" onClick={() => appendIdea(idea)} disabled={instructions.includes(idea) || instructions.length + idea.length + 2 > 400}>{idea}</button>
@@ -394,7 +424,7 @@ export function GeneratePage() {
         </form>
 
         <aside className="quiz-builder-summary" aria-label="Quiz summary">
-          <p className="type-micro">YOUR QUIZ</p>
+          <p className="type-micro">{'/* your quiz */'}</p>
           <h2 className={`quiz-summary-title ${quizTitle.trim() ? '' : 'quiz-summary-title--suggested'}`}>{displayTitle}</h2>
           <dl className="quiz-summary-meta">
             <div>
@@ -413,6 +443,9 @@ export function GeneratePage() {
                 ? <>Server provider when available, with curated exercises as a fallback. <Link to="/account" className="link">Add a Gemini key</Link>.</>
                 : <>Choose a provider in <Link to="/account" className="link">account settings</Link> before generating.</>}
           </p>
+          {/* The compile rail: while the request is in flight, a signal block sweeps it in
+           * discrete steps. This is the machine working, so it is the stepped register. */}
+          {busy ? <div className="a-scan my-2" aria-hidden="true" /> : null}
           <button
             type="submit"
             form="quiz-builder-form"
@@ -420,17 +453,27 @@ export function GeneratePage() {
             disabled={busy || topics.length === 0 || !canGenerate || settingsLoading || titleInvalid}
           >
             {busy ? (
-              <><span className="quiz-spinner" aria-hidden="true" />Generating {problemCount} problem{problemCount === 1 ? '' : 's'}…</>
+              // Four blocks lighting in sequence, not a rotating ring: a spinner is the most
+              // diluted busy indicator there is and belongs to no particular product.
+              <><span className="a-blocks" aria-hidden="true"><i /><i /><i /><i /></span>Generating {problemCount} problem{problemCount === 1 ? '' : 's'}…</>
             ) : !canGenerate ? 'Choose an AI provider' : `Generate ${problemCount} problem${problemCount === 1 ? '' : 's'}`}
           </button>
           {error ? (
-            <div role="alert" className="quiz-generation-error">
+            <div role="alert" className="quiz-generation-error a-diag">
               <p>{error}</p>
               <button type="button" className="link" disabled={!canGenerate || settingsLoading || busy || titleInvalid} onClick={() => void generate()}>Retry generation</button>
             </div>
           ) : null}
           {!topics.length ? <p className="type-micro text-[var(--color-warn)]">Add at least one topic to continue.</p> : null}
-          <p className="quiz-draft-status" role="status"><span className="quiz-draft-dot" aria-hidden="true" />{draftStatus}</p>
+          {/* Announced only when a draft write actually failed. The routine pair —
+           * "Saving draft…" then "Draft saved" — fires on every typing pause, so a live
+           * region here reads the same two sentences out again and again for as long as
+           * someone is writing. The routine state is visible text; only the failure is
+           * worth interrupting for. */}
+          <p className="quiz-draft-status a-toast" role={draftFailed ? 'status' : undefined}>
+            <span className="quiz-draft-dot" aria-hidden="true" />
+            {draftStatus}
+          </p>
           <button type="button" className="quiz-reset-button" onClick={resetDraft}>Reset quiz settings</button>
         </aside>
 
@@ -438,7 +481,7 @@ export function GeneratePage() {
       </div>
 
       {result && (
-        <div className="surface flex flex-col gap-3 p-[var(--space-md)]" aria-live="polite">
+        <div className="surface a-compile flex flex-col gap-3 p-[var(--space-md)]" aria-live="polite">
           <h2 className="type-title">
             {result.count > 0 ? `${result.count} problem${result.count > 1 ? 's' : ''} ready` : 'Nothing generated'}
           </h2>
@@ -451,15 +494,29 @@ export function GeneratePage() {
               {note}
             </p>
           ))}
-          <ul className="flex flex-col gap-2">
-            {result.problems.map((problem) => (
-              <li key={problem.problemId} className="flex flex-wrap items-center gap-2">
-                <Link to={`/problems/${problem.problemId}`} className="link">
-                  {problem.title}
-                </Link>
-                <span className="num type-small text-[var(--color-muted)]">
-                  {problem.difficulty} · verified {problem.verificationPassed ? '✓' : '✗'}{problem.providerUsed ? ` · ${problem.providerUsed}` : ''}
-                </span>
+          {/* The generated problems are a listing, so they get the listing's rail: numbered
+           * rows, and a numbered row whose reference solution failed verification wears the
+           * signal colour on its number, the way a compiler points at the line it rejected. */}
+          <ul className="gutter">
+            {result.problems.map((problem, index) => (
+              <li
+                key={problem.problemId}
+                className="gutter-row a-line"
+                data-flagged={!problem.verificationPassed}
+                style={revealDelay(index)}
+              >
+                <span className="gutter-ln" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                <div className="gutter-body flex flex-wrap items-center gap-2">
+                  <Link to={`/problems/${problem.problemId}`} className="link">
+                    {problem.title}
+                  </Link>
+                  <span className="num type-small text-[var(--color-muted)]">
+                    {problem.difficulty}{problem.providerUsed ? ` · ${problem.providerUsed}` : ''}
+                  </span>
+                  <span className={problem.verificationPassed ? 'tag a-strike' : 'tag a-strike verdict-fail'}>
+                    {problem.verificationPassed ? 'verified' : 'unverified'}
+                  </span>
+                </div>
               </li>
             ))}
           </ul>
@@ -470,6 +527,17 @@ export function GeneratePage() {
           )}
         </div>
       )}
+
+      {/* What the builder knows, stated plainly along the bottom edge — the same register
+       * as the gutter numbers above it. */}
+      <div className="statusbar mt-[var(--space-xl)]">
+        <span className="statusbar-item" data-strength="strong">generate.c</span>
+        <span className="statusbar-item num">{problemCount} × {difficulty}</span>
+        <span className="statusbar-item num hidden sm:inline">{topics.length} topic{topics.length === 1 ? '' : 's'}</span>
+        <span className="statusbar-item hidden sm:inline">{providerLabel}</span>
+        <span className="statusbar-spacer" />
+        <span className="statusbar-state" data-state={buildState}>{buildText}</span>
+      </div>
     </section>
   );
 }

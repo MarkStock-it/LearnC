@@ -69,7 +69,7 @@ export function PreferencesMenu() {
         aria-label="Preferences"
         ref={triggerRef}
         onClick={() => setOpen((value) => !value)}
-        className="flex size-8 items-center justify-center rounded-lg border border-[var(--color-rule)] bg-[var(--color-surface)] text-[var(--color-muted)] transition-colors"
+        className="flex size-8 items-center justify-center rounded-[var(--radius-control)] border border-[var(--color-rule)] bg-transparent text-[var(--color-muted)] transition-colors hover:border-[var(--color-hairline)] hover:text-[var(--color-ink)]"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="3" />
@@ -83,31 +83,37 @@ export function PreferencesMenu() {
           aria-label="Preferences"
           aria-modal="false"
           tabIndex={-1}
-          className="absolute end-0 top-[calc(100%+8px)] z-[var(--z-dropdown)] w-[280px] rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-surface)] p-1.5 shadow-[0_8px_24px_oklch(20%_0.02_258_/_0.12)]"
+          className="a-toast absolute end-0 top-[calc(100%+8px)] z-[var(--z-dropdown)] w-[290px] rounded-[var(--radius-surface)] border border-[var(--color-rule)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-stamp)]"
         >
-          <h4 className="px-2.5 pb-1.5 pt-2 text-[10.5px] font-[var(--weight-strong)] uppercase tracking-[0.09em] text-[var(--color-muted)]">
+          <h4 className="type-micro px-2.5 pb-1.5 pt-2 font-[var(--weight-strong)] ">
             Preferences
           </h4>
           <fieldset className="border-b border-[var(--color-rule)] px-2.5 pb-3 pt-1">
             <legend className="type-small font-[var(--weight-medium)]">Appearance</legend>
-            <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-[var(--color-surface-2)] p-1" role="group" aria-label="Color theme">
+            {/* Two machine keys. The selected one is told apart by its edge and weight as
+             * well as by `aria-pressed`, because a second block of colour in the chrome is
+             * exactly what this design keeps out. */}
+            <div className="mt-2 grid grid-cols-2 gap-1" role="group" aria-label="Color theme">
               {(['light', 'dark'] as const).map((theme) => (
                 <button
                   key={theme}
                   type="button"
                   aria-pressed={prefs.theme === theme}
                   onClick={() => save({ theme })}
-                  className={`min-h-11 rounded-md px-2 text-[var(--text-small)] capitalize transition-colors ${prefs.theme === theme ? 'bg-[var(--color-surface)] text-[var(--color-ink)] shadow-[var(--shadow-whisper)]' : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'}`}
+                  className={`min-h-11 rounded-[var(--radius-control)] border px-2 text-[var(--text-small)] capitalize transition-colors ${
+                    prefs.theme === theme
+                      ? 'border-[var(--color-hairline)] font-[var(--weight-strong)] text-[var(--color-ink)]'
+                      : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+                  }`}
                 >
-                  <span aria-hidden="true" className="me-1.5">{theme === 'light' ? '☼' : '☾'}</span>
                   {theme}
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[var(--text-micro)] text-[var(--color-muted)]">Choose the appearance used across the app.</p>
+            <p className="type-micro mt-1.5">Choose the appearance used across the app.</p>
           </fieldset>
           {ROWS.map((row) => (
-            <label key={row.key} className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2">
+            <label key={row.key} className="flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-control)] px-2.5 py-2">
               <input
                 type="checkbox"
                 className="mt-1 accent-[var(--color-accent)]"

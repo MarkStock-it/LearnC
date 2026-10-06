@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { SubmissionResponse, TestCaseResult } from '../../services/api';
+import { revealDelay } from '../../lib/reveal';
 import { StatusMark } from '../ui/StatusMark';
 
 /**
@@ -74,9 +75,9 @@ export function ExecutionStack({ detail }: { detail: SubmissionResponse }) {
 
   if (frames.length === 0) {
     return (
-      <section className="surface p-[var(--space-md)]" aria-label="Execution stack">
+      <section className="a-compile surface p-[var(--space-md)]" aria-label="Execution stack">
         <h3 className="type-title flex items-center gap-2">
-          <span className="verdict-pass" aria-hidden>
+          <span className="a-strike verdict-pass inline-flex" aria-hidden>
             <StatusMark kind="pass" />
           </span>
           Execution stack
@@ -91,10 +92,12 @@ export function ExecutionStack({ detail }: { detail: SubmissionResponse }) {
   const crashCount = frames.length;
 
   return (
-    <section className="surface p-[var(--space-md)]" aria-label="Execution stack">
+    <section className="a-compile surface p-[var(--space-md)]" aria-label="Execution stack">
       <h3 className="type-title flex flex-wrap items-center gap-2">
         Execution stack
-        <span className="tag verdict-fail" style={{ border: '1px solid var(--color-rule)' }}>
+        {/* The count is the first verdict on this surface, so it lands rather than
+         * appearing: the crash total is the thing the student came here to read. */}
+        <span className="a-strike tag verdict-fail border border-[var(--color-rule)]">
           {crashCount === 1 ? '1 case ended abnormally' : `${crashCount} cases ended abnormally`}
         </span>
       </h3>
@@ -103,7 +106,11 @@ export function ExecutionStack({ detail }: { detail: SubmissionResponse }) {
         {frames.map((frame, index) => {
           const open = openIndex === index;
           return (
-            <div key={`${frame.head}-${index}`} className="border-t border-[var(--color-rule)] first:border-t-0">
+            <div
+              key={`${frame.head}-${index}`}
+              className="a-row border-t border-[var(--color-rule)] first:border-t-0"
+              style={revealDelay(index)}
+            >
               <button
                 type="button"
                 aria-expanded={open}

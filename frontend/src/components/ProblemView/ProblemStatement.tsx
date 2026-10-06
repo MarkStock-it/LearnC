@@ -1,19 +1,25 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ProblemDetail } from '../../services/api';
+import { revealDelay } from '../../lib/reveal';
 
 /**
  * Statement typography is handled by the `.prose` rules in the component layer rather
  * than per-element renderers: one place to reason about measure, rhythm and code
  * framing. Code blocks get a typographic frame (top and bottom rule), never a faked
  * window with traffic-light dots.
+ *
+ * `.prose` is also the one block in the app that opts out of the monospace face: this is
+ * the longest thing a student reads and it was written by a person, so it is set in the
+ * face a person writes in. The sample input/output wells below stay monospace, because
+ * those are program output.
  */
 export function ProblemStatement({ problem }: { problem: ProblemDetail }) {
   const hiddenCases = Math.max(problem.testCaseCount - problem.publicTestCaseCount, 0);
 
   return (
     <article className="flex flex-col gap-[var(--space-lg)]">
-      <header className="flex flex-col gap-[var(--space-sm)]">
+      <header className="a-compile flex flex-col gap-[var(--space-sm)]">
         <h1 className="type-display">{problem.title}</h1>
 
         {/* Difficulty and provenance stack under the title. A label sharing the
@@ -67,7 +73,7 @@ export function ProblemStatement({ problem }: { problem: ProblemDetail }) {
           </p>
 
           {problem.publicTestCases.map((testCase, index) => (
-            <figure key={testCase.id} className="flex flex-col gap-[var(--space-xs)]">
+            <figure key={testCase.id} className="a-row flex flex-col gap-[var(--space-xs)]" style={revealDelay(index)}>
               <figcaption className="type-micro">
                 Sample {index + 1}
                 {testCase.description ? `, ${testCase.description.toLowerCase()}` : ''}

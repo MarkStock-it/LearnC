@@ -174,7 +174,7 @@ export function PracticePage() {
 
       {/* — Unified container: top bar + three panels — */}
       <div
-        className={`relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[var(--color-rule)] bg-[var(--color-surface)] shadow-[0_18px_50px_oklch(20%_0.02_250_/_0.10)] transition-opacity duration-300 ${
+        className={`relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-sheet)] border border-[var(--color-rule)] bg-[var(--color-surface)] transition-opacity duration-300 ${
           focusMode ? 'opacity-95' : ''
         }`}
       >
@@ -189,7 +189,7 @@ export function PracticePage() {
             onClick={() => navigate(`/sets/${problem.problemSetId}`)}
             aria-label="Back to the problem set"
             title="Back to the problem set"
-            className="flex size-7 items-center justify-center rounded-full bg-[var(--color-fail)] text-[var(--color-accent-ink)] shadow-[0_1px_4px_oklch(20%_0.02_250_/_0.3)] transition-transform duration-200 hover:scale-110"
+            className="flex size-7 items-center justify-center rounded-[var(--radius-micro)] border border-[var(--color-hairline)] text-[var(--color-ink-soft)] transition-colors duration-200 hover:border-[var(--color-ink-soft)] hover:text-[var(--color-ink)]"
           >
             <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M10 3.5 5.5 8l4.5 4.5" />
@@ -213,7 +213,7 @@ export function PracticePage() {
                 aria-haspopup="dialog"
                 aria-label="Open memory walkthrough"
                 title="Memory walkthrough"
-                className="flex size-7 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)] transition-transform duration-200 hover:scale-110 hover:text-[var(--color-ink)]"
+                className="flex size-7 items-center justify-center rounded-[var(--radius-micro)] bg-[var(--color-surface-2)] text-[var(--color-muted)] transition-colors duration-200 hover:text-[var(--color-ink)]"
               >
                 <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
                   <rect x="2.5" y="4" width="11" height="8" rx="2" />
@@ -230,7 +230,7 @@ export function PracticePage() {
                 reset();
                 updateCode(SKELETON);
               }}
-              className="flex size-7 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)] transition-transform duration-200 hover:scale-110 hover:text-[var(--color-ink)] disabled:opacity-40"
+              className="flex size-7 items-center justify-center rounded-[var(--radius-micro)] bg-[var(--color-surface-2)] text-[var(--color-muted)] transition-colors duration-200 hover:text-[var(--color-ink)] disabled:opacity-40"
             >
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v2.6h-2.6" />
@@ -267,11 +267,17 @@ export function PracticePage() {
               transition: `width 300ms ${PANEL_EASE}`,
             }}
             aria-label="Problem statement"
-            aria-hidden={!activityOpen}
           >
+            {/* The toggle sits outside the inert subtree on purpose. `inert` removes an
+             * element from the tab order, from the accessibility tree *and* from pointer
+             * events, so putting it on the aside would have disabled the one control that
+             * brings a collapsed panel back — the same trap the old `aria-hidden` had, made
+             * worse. Only the collapsed content goes inert; the handle stays live. */}
             <EdgeToggle side="left" open={activityOpen} onClick={() => setActivityOpen((v) => !v)} />
             <div
-              className="h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-[16px] bg-[var(--color-paper)] p-[var(--space-lg)]"
+              className="h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-[var(--radius-surface)] bg-[var(--color-paper)] p-[var(--space-lg)]"
+              inert={!activityOpen}
+              aria-hidden={!activityOpen}
               style={{
                 width: activityOpen ? 'min(340px, 30vw)' : '0px',
                 opacity: activityOpen ? 1 : 0,
@@ -287,7 +293,7 @@ export function PracticePage() {
            * as a sibling's width animates, the flexbox resolves the remainder every
            * frame, so the editor expands and contracts in lockstep. */}
           <section
-            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--color-surface-2)]"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-surface)] bg-[var(--color-surface-2)]"
             aria-label="Your solution"
           >
             <div className="flex flex-none items-center gap-2 px-3 py-1.5">
@@ -297,14 +303,28 @@ export function PracticePage() {
                   ? 'No attempts yet'
                   : `${progress.attempts} attempt${progress.attempts === 1 ? '' : 's'}`}
               </span>
+              {/* Not a live region: it holds an elapsed-time counter that ticks for the
+               * whole grading run, so a polite region here re-announces the status and the
+               * timer many times a second. The verdict is announced once by the mounted
+               * sr-only region at the end of this component. */}
               {running ? (
-                <span className="type-micro ms-auto flex items-center gap-1.5" role="status">
-                  <span aria-hidden className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--color-accent)]" />
+                <span className="type-micro ms-auto flex items-center gap-2">
+                  {/* Four blocks lighting in sequence: the busy state in the register of the
+                   * machine, not a spinner's continuous rotation. */}
+                  <span className="a-blocks" aria-hidden>
+                    <i />
+                    <i />
+                    <i />
+                    <i />
+                  </span>
                   {STATUS_TEXT[liveStatus ?? 'QUEUED']}
                   <span className="num">{(elapsedMs / 1000).toFixed(1)}s</span>
                 </span>
               ) : null}
             </div>
+            {/* While the sandbox works, the rail under the header sweeps, so the compile is
+             * visibly in flight instead of merely implied by a label. */}
+            {running ? <div className="a-scan flex-none" aria-hidden /> : null}
 
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
               <CodeEditor value={code} onChange={updateCode} readOnly={codeBusy} />
@@ -344,22 +364,22 @@ export function PracticePage() {
                   <div className="grid min-h-0 gap-2 sm:grid-cols-2">
                     {runResult.compilationError ? (
                       <div className="sm:col-span-2">
-                        <p className="mono type-micro mb-1 text-[var(--color-fail)]">Compilation error</p>
-                        <pre className="mono max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-fail)]">{runResult.compilationError}</pre>
+                        <p className="a-diag mono type-micro mb-1 text-[var(--color-fail)]">Compilation error</p>
+                        <pre className="mono max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-fail)]">{runResult.compilationError}</pre>
                       </div>
                     ) : null}
                     <div>
                       <p className="mono type-micro mb-1">stdout</p>
-                      <pre className="mono max-h-28 min-h-8 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs">{runResult.stdout || '(no output)'}</pre>
+                      <pre className="mono max-h-28 min-h-8 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--color-surface-2)] p-2 text-xs">{runResult.stdout || '(no output)'}</pre>
                     </div>
                     <div>
                       <p className="mono type-micro mb-1">stderr</p>
-                      <pre className="mono max-h-28 min-h-8 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs">{runResult.stderr || '(no errors)'}</pre>
+                      <pre className="mono max-h-28 min-h-8 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--color-surface-2)] p-2 text-xs">{runResult.stderr || '(no errors)'}</pre>
                     </div>
                     {!runResult.compilationError && runResult.compilerOutput ? (
                       <div className="sm:col-span-2">
                         <p className="mono type-micro mb-1">Compiler output</p>
-                        <pre className="mono max-h-20 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 text-xs">{runResult.compilerOutput}</pre>
+                        <pre className="mono max-h-20 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--color-surface-2)] p-2 text-xs">{runResult.compilerOutput}</pre>
                       </div>
                     ) : null}
                   </div>
@@ -394,11 +414,12 @@ export function PracticePage() {
               transition: `width 300ms ${PANEL_EASE}`,
             }}
             aria-label="Test cases and results"
-            aria-hidden={!testsOpen}
           >
             <EdgeToggle side="right" open={testsOpen} onClick={() => setTestsOpen((v) => !v)} />
             <div
-              className="flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto overscroll-contain rounded-[16px] bg-[var(--color-paper)] p-[var(--space-md)]"
+              className="flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto overscroll-contain rounded-[var(--radius-surface)] bg-[var(--color-paper)] p-[var(--space-md)]"
+              inert={!testsOpen}
+              aria-hidden={!testsOpen}
               style={{
                 width: testsOpen ? 'min(380px, 32vw)' : '0px',
                 opacity: testsOpen ? 1 : 0,
@@ -407,7 +428,7 @@ export function PracticePage() {
               }}
             >
               {error ? (
-                <p className="type-small mb-2 text-[var(--color-fail)]" role="alert">
+                <p className="a-diag type-small mb-2 text-[var(--color-fail)]" role="alert">
                   No verdict came back: {error}
                 </p>
               ) : null}
@@ -426,6 +447,34 @@ export function PracticePage() {
               )}
             </div>
           </aside>
+        </div>
+
+        {/* The status bar — the same device the front door uses, and it reports state that
+         * is actually true: the file, the language, the problem, the score, the sandbox that
+         * ran it, and what the grader is doing at this moment. */}
+        <div className="statusbar flex-none">
+          <span className="statusbar-item" data-strength="strong">solution.c</span>
+          <span className="statusbar-item">C99</span>
+          <span className="statusbar-item num">problem {problem.id}</span>
+          <span className="statusbar-spacer" />
+          <span className="statusbar-item num">
+            {detail
+              ? `${detail.submission.passedCount}/${detail.submission.totalCount} cases`
+              : `best ${progress.bestPassedCount}/${problem.testCaseCount}`}
+          </span>
+          <span className="statusbar-item">{detail?.submission.executor ?? 'sandbox: unshare'}</span>
+          <span
+            className="statusbar-state"
+            data-state={running ? undefined : error ? 'error' : detail ? (detail.solved ? 'ok' : 'error') : undefined}
+          >
+            {running
+              ? `grading · ${(elapsedMs / 1000).toFixed(1)}s`
+              : error
+                ? 'no verdict'
+                : detail
+                  ? (detail.solved ? 'accepted' : 'rejected')
+                  : 'ready'}
+          </span>
         </div>
       </div>
 
