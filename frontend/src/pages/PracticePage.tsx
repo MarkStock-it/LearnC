@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, getQueryIdentity, type RunCodeResponse, type SubmissionResponse } from '../services/api';
+import { previewCode, toPreviewSubmission, type PreviewProgress } from '../services/browserRunner';
 import { useCodeSubmission } from '../hooks/useCodeSubmission';
 import { CodeEditor } from '../components/Editor/CodeEditor';
 import { ProblemStatement } from '../components/ProblemView/ProblemStatement';
@@ -88,6 +89,22 @@ export function PracticePage() {
   const [runResult, setRunResult] = useState<RunCodeResponse | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [runningCode, setRunningCode] = useState(false);
+  // Instant browser preview: unofficial, public cases only, never saved. The
+  // server verdict (`detail`) stays the single source of truth for progress.
+  const [previewDetail, setPreviewDetail] = useState<SubmissionResponse | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewNotes, setPreviewNotes] = useState<string[]>([]);
+  const [previewProgress, setPreviewProgress] = useState<PreviewProgress | null>(null);
+  const [previewWarnings, setPreviewWarnings] = useState<string | null>(null);
+  const previewAbort = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      previewAbort.current?.abort();
+    },
+    [],
+  );
 
   /**
    * Restore in-progress work once per problem.
@@ -113,6 +130,12 @@ export function PracticePage() {
   const updateCode = (value: string) => {
     setCode(value);
     window.localStorage.setItem(codeKey(id), value);
+    // A preview belongs to the exact code that produced it; editing re-opens it.
+    setPreviewDetail(null);
+    setPreviewError(null);
+    setPreviewNotes([]);
+    setPreviewWarnings(null);
+    setPreviewProgress(null);
   };
 
   const runTests = async () => {
@@ -138,6 +161,59 @@ export function PracticePage() {
     }
   };
 
+  /**
+   * Instant preview: public cases run in a Web Worker on this machine — free,
+   * immediate, and queue-free. Anything the preview engine cannot handle bows
+   * out with a pointer to Run tests instead of a fake verdict.
+   */
+  const instantPreview = async () => {
+    previewAbort.current?.abort();
+    const controller = new AbortController();
+    previewAbort.current = controller;
+    setPreviewing(true);
+    setPreviewDetail(null);
+    setPreviewError(null);
+    setPreviewNotes([]);
+    setPreviewWarnings(null);
+    setPreviewProgress(null);
+    // The student just asked for feedback — make sure the panel that shows it is open.
+    setTestsOpen(true);
+    try {
+      const publicCases = problemQuery.data?.problem.publicTestCases ?? [];
+      if (publicCases.length === 0) {
+        setPreviewError('This problem exposes no public cases to preview against. Use Run tests.');
+        return;
+      }
+      const run = await previewCode(
+        code,
+        publicCases.map((testCase) => ({
+          input: testCase.inputData,
+          expected: testCase.expectedOutput,
+          description: testCase.description,
+        })),
+        {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (!controller.signal.aborted) setPreviewProgress(progress);
+          },
+        },
+      );
+      if (controller.signal.aborted) return;
+      setPreviewProgress(null);
+      if (run.runError) {
+        setPreviewError(run.runError);
+        return;
+      }
+      setPreviewNotes(run.notes);
+      setPreviewWarnings(run.compileWarnings);
+      setPreviewDetail(
+        toPreviewSubmission(id, code, run, problemQuery.data?.problem.constraints.time_limit_seconds ?? null),
+      );
+    } finally {
+      if (!controller.signal.aborted) setPreviewing(false);
+    }
+  };
+
   if (!Number.isFinite(id)) {
     return <p className="type-small text-[var(--color-fail)]">That problem id is not valid.</p>;
   }
@@ -158,7 +234,7 @@ export function PracticePage() {
   const problemSetTitle =
     setsQuery.data?.problemSets.find((entry) => entry.id === problem.problemSetId)?.title ?? 'Problem set';
   const running = phase === 'running';
-  const codeBusy = running || runningCode;
+  const codeBusy = running || runningCode || previewing;
   const focusMode = !activityOpen && !testsOpen;
 
   return (
@@ -391,6 +467,15 @@ export function PracticePage() {
               <button type="button" className="btn btn-primary min-h-9 px-4 text-[13px]" onClick={runTests} disabled={codeBusy || code.trim().length === 0}>
                 {running ? 'Grading…' : 'Run tests'}
               </button>
+              <button
+                type="button"
+                className="btn btn-quiet min-h-9 px-3 text-[13px]"
+                onClick={instantPreview}
+                disabled={codeBusy || code.trim().length === 0}
+                title="Run the public cases instantly in your browser — free and queue-free, but unofficial. Hidden cases still need Run tests."
+              >
+                {previewing ? 'Previewing…' : 'Instant preview'}
+              </button>
               <button type="button" className="btn btn-quiet min-h-9 px-3 text-[13px]" onClick={runCode} disabled={codeBusy || code.trim().length === 0}>
                 {runningCode ? 'Running…' : 'Run code'}
               </button>
@@ -431,6 +516,34 @@ export function PracticePage() {
                 <p className="a-diag type-small mb-2 text-[var(--color-fail)]" role="alert">
                   No verdict came back: {error}
                 </p>
+              ) : null}
+              {previewing ? (
+                <p className="type-small mb-2 text-[var(--color-muted)]" role="status">
+                  {previewProgress?.stage === 'toolchain'
+                    ? `Fetching the C compiler (${(previewProgress.loadedBytes / 1048576).toFixed(0)}${previewProgress.totalBytes > 0 ? ` / ${(previewProgress.totalBytes / 1048576).toFixed(0)}` : ''} MB, once only)…`
+                    : previewProgress?.stage === 'run'
+                      ? `Running public case ${previewProgress.loadedBytes + 1} of ${previewProgress.totalBytes}…`
+                      : 'Compiling your code in the browser…'}
+                </p>
+              ) : null}
+              {previewError ? (
+                <p className="type-small mb-2 text-[var(--color-warn)]" role="alert">
+                  {previewError}
+                </p>
+              ) : null}
+              {previewDetail ? (
+                <div className="mb-[var(--space-md)] rounded-[var(--radius-surface)] border border-dashed border-[var(--color-rule)] p-[var(--space-sm)]">
+                  <p className="type-micro mb-2 text-[var(--color-muted)]">
+                    Instant preview — compiled and run on your machine, public cases only, not saved and not official.
+                    {previewNotes.length > 0 ? ` ${previewNotes.join(' ')}` : ''}
+                  </p>
+                  {previewWarnings ? (
+                    <pre className="mono max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-warn)]">
+                      {previewWarnings}
+                    </pre>
+                  ) : null}
+                  <TestResultsTable detail={previewDetail} />
+                </div>
               ) : null}
               {detail ? (
                 <div className="flex flex-col gap-[var(--space-md)]">
@@ -481,6 +594,10 @@ export function PracticePage() {
       {/* Always mounted, so a change to its text is what announces the verdict. */}
       <p role="status" className="sr-only">
         {verdictAnnouncement(detail)}
+        {previewDetail
+          ? ` Preview: ${previewDetail.submission.passedCount} of ${previewDetail.submission.totalCount} public cases passed in the browser. Unofficial.`
+          : ''}
+        {previewError ? ` Preview unavailable: ${previewError}` : ''}
       </p>
     </div>
   );

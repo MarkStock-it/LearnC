@@ -8,7 +8,16 @@ import {
 import type { GenerateOptions } from './aiService.js';
 import { problemHelperFileSchema, type ProblemHelperFile } from '../domain/sourceFiles.js';
 import { z } from 'zod';
-import { learnerIntentBlock, problemSystemPrompt, testCaseSystemPrompt } from './aiPrompts.js';
+import { condenseProblemForTestCases, learnerIntentBlock, problemSystemPrompt, testCaseSystemPrompt } from './aiPrompts.js';
+import {
+  estimateTokens,
+  GeminiQuotaError,
+  noteGeminiRetryAfter,
+  parseRetryAfterMs,
+  reconcileGeminiUsage,
+  reserveGeminiBudget,
+  type BudgetReservation,
+} from './aiQuota.js';
 
 /**
  * Gemini client (Generative Language REST API, generateContent).
@@ -59,8 +68,26 @@ async function callGemini(options: {
   maxTokens: number;
   responseSchema?: Record<string, unknown>;
   temperature?: number;
+  /**
+   * When true, reserve `prompt estimate + maxTokens` against the key's
+   * per-minute budget first, and reconcile with the real usage afterwards.
+   */
+  budget?: boolean;
 }): Promise<string> {
   const model = effectiveModel(options.model);
+  let reservation: BudgetReservation | null = null;
+  let estimatedTotal = 0;
+  if (options.budget) {
+    estimatedTotal =
+      estimateTokens(options.system) + estimateTokens(options.userMessage) + options.maxTokens;
+    reservation = await reserveGeminiBudget(options.apiKey, estimatedTotal);
+    if (!reservation) {
+      throw new GeminiQuotaError(
+        'Your free Gemini key allows roughly 20k tokens per minute, and this request would exceed the budget left. ' +
+          'Wait a minute, generate fewer problems at once, or switch to the server provider.',
+      );
+    }
+  }
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: options.maxTokens,
   };
@@ -93,6 +120,14 @@ async function callGemini(options: {
   });
 
   const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+  if (reservation) {
+    const actual = data.usageMetadata?.totalTokenCount;
+    if (typeof actual === 'number' && actual >= 0) {
+      reconcileGeminiUsage(reservation.fingerprint, estimatedTotal, actual);
+    }
+    // On error responses the spend is unknown, so the estimate stays deducted:
+    // conservative, and it stops a failing key from hammering the API.
+  }
   if (!response.ok) {
     const details = data.error?.message?.slice(0, 260) ?? 'unknown error';
     if (response.status === 401 || (response.status === 403 && /api.?key|credential|permission/i.test(details))) {
@@ -101,7 +136,18 @@ async function callGemini(options: {
     if (response.status === 400 || response.status === 403 || response.status === 404) {
       throw new Error(`Gemini API rejected model ${model} (HTTP ${response.status}): ${details}. Check the model name and whether your key/project has access; Gemini 2.5 access is restricted for some accounts.`);
     }
-    if (response.status === 429) throw new Error(`Gemini API rate limit/quota reached (HTTP 429): ${details}. Wait before retrying or choose the server provider.`);
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(data, response.headers);
+      if (reservation) noteGeminiRetryAfter(reservation.fingerprint, retryAfterMs);
+      const waitHint =
+        retryAfterMs > 0
+          ? `The API asked for a ~${Math.ceil(retryAfterMs / 1000)}s backoff.`
+          : 'Wait a minute before retrying.';
+      throw new GeminiQuotaError(
+        `Gemini API rate limit/quota reached (HTTP 429): ${details}. ${waitHint} Generate fewer problems at once or choose the server provider.`,
+        retryAfterMs,
+      );
+    }
     throw new Error(`Gemini API returned ${response.status}: ${details}`);
   }
 
@@ -189,7 +235,7 @@ export async function generateWithGemini(
   apiKey: string,
   options: GenerateOptions,
   model?: string,
-): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase>; helperFiles: ProblemHelperFile[] }> {
+): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase>; helperFiles: ProblemHelperFile[]; warnings: string[] }> {
   const problemText = await callGemini({
     apiKey,
     model,
@@ -197,21 +243,25 @@ export async function generateWithGemini(
     userMessage: 'Generate a C programming problem.',
     maxTokens: 2048,
     responseSchema: problemResponseSchema,
+    budget: true,
   });
   const problem = parseProblem(problemText);
 
+  // The test-case call needs formats, samples and semantics — not the full
+  // statement prose, which can be the largest input chunk of the three calls.
   const testCaseText = await callGemini({
     apiKey,
     model,
-    system: testCaseSystemPrompt(problem, options),
+    system: testCaseSystemPrompt(condenseProblemForTestCases(problem), options),
     userMessage: 'Generate the test cases as specified.',
     maxTokens: 2048,
     responseSchema: testCasesResponseSchema,
+    budget: true,
   });
 
   const testCases = finalizeCases(parseTestCases(testCaseText));
   const helperFiles = await generateHelperFiles(apiKey, options, model, problem);
-  return { problem, testCases, helperFiles };
+  return { problem, testCases, helperFiles, warnings: [] };
 }
 
 async function generateHelperFiles(
@@ -226,6 +276,7 @@ async function generateHelperFiles(
     system: 'Determine if a small reusable C utility would materially help with this problem. Return an empty helper_files array unless genuinely useful. Never include main(). Any helper must compile with the provided entry point and be useful in context. Return strict JSON only.',
     userMessage: JSON.stringify({ problem, topics: options.topics }),
     maxTokens: 1200,
+    budget: true,
     responseSchema: {
       type: 'object',
       properties: { helper_files: { type: 'array', maxItems: 3, items: { type: 'object', properties: {
@@ -241,41 +292,57 @@ async function generateHelperFiles(
 
 /**
  * One-call compact flow (default): the problem and its test cases arrive in a
- * single response with tight caps, roughly halving the token spend. The prompt
- * stresses brevity: no prose, small samples, few test cases.
+ * single response with tight caps. Test cases are capped at 10 (with a
+ * warning when the request asked for more — 24 cases in one response would
+ * both blow the output budget and risk truncation), helper files are not
+ * requested here (they cost output tokens on every problem; the two-call
+ * flow still produces them), and `maxTokens` scales with the case count
+ * instead of always spending the ceiling.
  */
+const MAX_COMPACT_CASES = 10;
+
 export async function generateWithGeminiCompact(
   apiKey: string,
   options: GenerateOptions,
   model?: string,
-): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase>; helperFiles: ProblemHelperFile[] }> {
-  const system = `You create high-quality exam-style C99 problems for CS students. Output strict JSON only. Every problem needs a clear standalone title, rich markdown statement with at least two visible examples (each with explanation), notes/hints, exact input/output specifications, constraints, 2–3 relevant tags, a genuinely calibrated ${options.difficulty} difficulty, a correct reference solution, at least 2 public examples and at least 4 hidden edge/boundary cases. Provide a short structured statement with sections Overview, Input, Output, Constraints, Examples, Notes. Do not fabricate sample pairs or vague formats. Keep examples/test data consistent with the reference solution.`;
+): Promise<{ problem: GeneratedProblem; testCases: Array<GeneratedTestCase>; helperFiles: ProblemHelperFile[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const requested = Math.max(options.testCaseCount, options.publicTestCaseCount + 4);
+  const caseTarget = Math.min(MAX_COMPACT_CASES, Math.max(6, requested));
+  if (requested > MAX_COMPACT_CASES) {
+    warnings.push(
+      `Asked for ${requested} test cases; generated ${caseTarget} to stay inside the free Gemini token budget.`,
+    );
+  }
+  // Roughly 1500 tokens for the write-up + reference solution, ~140 per case.
+  const maxTokens = Math.min(3072, 1500 + caseTarget * 140);
+
+  const system = `You create exam-style C99 problems for CS students. Output strict JSON only — no prose, no markdown fences. Write a concise title and a compact statement (Overview, Input, Output, Constraints, exactly two worked examples with one-line explanations, brief Notes). Keep every example consistent with the reference solution. Calibrate to ${options.difficulty} difficulty. Do not include helper files.`;
 
   const userMessage = `Create ONE problem that genuinely requires: ${options.topics.join(', ')}.
 Difficulty target: ${options.difficulty}
 time limit seconds: 2
 memory limit MB: 256
-test cases: exactly ${Math.max(options.testCaseCount, options.publicTestCaseCount + 4)} — at least two public examples and at least four hidden edge/boundary cases. Each expected_output must agree with the reference solution.${learnerIntentBlock(options)}
+test cases: exactly ${caseTarget} — at least two public examples and the rest hidden edge/boundary cases. Each expected_output must agree with the reference solution.${learnerIntentBlock(options)}
 JSON shape: {"title": string, "description": string, "constraints": {"time_limit_seconds": number, "memory_limit_mb": number, "input_format": string, "output_format": string, "sample_input": string, "sample_output": string}, "tags": string[2..3], "difficulty": "${options.difficulty}", "reference_solution": string, "test_cases": [{"input": string, "expected_output": string, "is_public": boolean, "description": string}]}`;
+
+  const casesSchema = (testCasesResponseSchema.properties as Record<string, Record<string, unknown>>).test_cases;
 
   const text = await callGemini({
     apiKey,
     model,
     system,
     userMessage,
-    maxTokens: 3072,
+    maxTokens,
     temperature: 0.6,
+    budget: true,
     responseSchema: {
       type: 'object',
       properties: {
         ...(problemResponseSchema.properties as Record<string, unknown>),
-        test_cases: (testCasesResponseSchema.properties as Record<string, unknown>).test_cases,
-        helper_files: { type: 'array', maxItems: 3, items: { type: 'object', properties: {
-          filename: { type: 'string' }, content: { type: 'string' }, language: { type: 'string', enum: ['c', 'h'] },
-          purpose: { type: 'string' }, autoInclude: { type: 'boolean' },
-        }, required: ['filename', 'content', 'language', 'purpose', 'autoInclude'] } },
+        test_cases: { ...casesSchema, maxItems: caseTarget },
       },
-      required: [...(problemResponseSchema.required as string[]), 'test_cases', 'helper_files'],
+      required: [...(problemResponseSchema.required as string[]), 'test_cases'],
     },
   });
 
@@ -320,5 +387,5 @@ JSON shape: {"title": string, "description": string, "constraints": {"time_limit
         },
       ]);
 
-  return { problem, testCases, helperFiles: z.array(problemHelperFileSchema).max(3).parse(parsed.helper_files ?? []) };
+  return { problem, testCases, helperFiles: [], warnings };
 }

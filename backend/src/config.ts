@@ -142,6 +142,13 @@ export const config = {
     /** Hard per-call timeout so a hung endpoint falls back to the offline bank. */
     timeoutMs: int('AI_TIMEOUT_MS', 120_000),
     maxAttempts: int('AI_MAX_ATTEMPTS', 3),
+    /**
+     * Free-tier Gemini throughput this process paces student keys against
+     * (the free tier is ~20k tokens/min per key).
+     */
+    geminiTpmLimit: int('GEMINI_TPM_LIMIT', 20_000),
+    /** Longest one Gemini call waits for token budget before falling back. */
+    geminiBudgetWaitMs: int('GEMINI_BUDGET_WAIT_MS', 20_000),
   },
 
   http: {

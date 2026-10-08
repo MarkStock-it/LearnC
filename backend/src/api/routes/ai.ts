@@ -127,9 +127,11 @@ async function generateOne(
 /**
  * POST /api/ai/generate-problem — the student-facing generator with quiz
  * customisation. Provider chain per problem: the user's Gemini key (compact
- * one-call mode by default to spare their quota), then the server provider,
- * then the curated bank. Every generated bundle is verified in the sandbox
- * before it is stored.
+ * one-call mode by default to spare their quota, paced against a per-key
+ * token budget), then the server provider, then the curated bank. Every
+ * generated bundle is verified in the sandbox before it is stored. A failing
+ * item no longer aborts the quiz: whatever was made is kept, and each
+ * failure is reported in `notes`.
  */
 aiRouter.post(
   '/generate-problem',
@@ -140,16 +142,27 @@ aiRouter.post(
 
     const count = body.quiz.problemCount;
     const created: PersistedProblem[] = [];
-    const avoid: string[] = [...body.quiz.avoidTitles, ...(await repo.listProblemSets(user.id)).map((set) => set.title)];
+    const failures: string[] = [];
+    // The avoid-list rides in every prompt, so it stays bounded: the quiz
+    // list plus the twelve most recent sets, and only the freshest slice of
+    // the running list per call (the prompt formatter caps it again).
+    const avoid: string[] = [
+      ...body.quiz.avoidTitles.slice(-8),
+      ...(await repo.listProblemSets(user.id)).slice(0, 12).map((set) => set.title),
+    ];
 
     for (let index = 0; index < count; index += 1) {
       try {
-        const item = await generateOne(user.id, user.username, body, geminiKey, avoid);
+        const item = await generateOne(user.id, user.username, body, geminiKey, avoid.slice(-16));
         created.push(item);
         avoid.push(item.title);
       } catch (error) {
         if (error instanceof Error && error.message === 'dry-run-not-supported-in-quiz-loop') break;
-        throw error;
+        // One bad item no longer aborts the quiz: keep what was made and say
+        // exactly which item failed, so the student gets problems, not a 500.
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn({ userId: user.id, index, err: message }, 'quiz item failed — keeping the problems already made');
+        failures.push(`Problem ${index + 1} of ${count} could not be generated: ${message.slice(0, 200)}`);
       }
     }
 
@@ -160,7 +173,7 @@ aiRouter.post(
       problemSetId: created.length > 0 ? (await repo.listProblemSets(user.id)).find((set) => set.title === (body.quiz.quizTitle ?? `${user.username}'s practice quiz`))?.id ?? null : null,
       notes:
         created.length < count
-          ? [`Only ${created.length}/${count} problems could be generated; check warnings.`]
+          ? [`Only ${created.length}/${count} problems could be generated; check warnings.`, ...failures]
           : [],
     });
   }),

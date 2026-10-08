@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { compareOutput } from './evaluationService.js';
 import { getExecutor } from './executor/index.js';
 import { extractJson, problemSystemPrompt, testCaseSystemPrompt } from './aiPrompts.js';
+import { isQuotaError } from './aiQuota.js';
 import { pickBankProblem, type BankProblem } from './problemBank.js';
 
 export interface GenerateOptions {
@@ -267,6 +268,14 @@ export async function generateProblemBundle(options: GenerateOptions): Promise<G
   return generateWithModel(options);
 }
 
+/** Human-readable Gemini failure that names the free-tier limit when quota caused it. */
+function describeGeminiFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return isQuotaError(error)
+    ? `Gemini generation failed (free-tier limit, about 20k tokens/min): ${message} Wait a minute, generate fewer problems at once, or use the server provider.`
+    : `Gemini generation failed: ${message}`;
+}
+
 export interface PerUserGenerationResult {
   bundle: GeneratedBundle;
   providerUsed: 'gemini' | 'server' | 'offline';
@@ -291,32 +300,41 @@ export async function generateProblemBundleForUser(
   if (userChoice.aiProvider === 'gemini' && userChoice.geminiKey) {
     const { generateWithGemini, generateWithGeminiCompact } = await import('./geminiService.js');
     try {
-      const { problem, testCases, helperFiles } = userChoice.compact === false
+      const first = userChoice.compact === false
         ? await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel)
         : await generateWithGeminiCompact(userChoice.geminiKey, options, userChoice.geminiModel);
+      warnings.push(...first.warnings);
       return {
-        bundle: { problem, testCases, source: 'gemini', warnings, helperFiles },
+        bundle: { problem: first.problem, testCases: first.testCases, source: 'gemini', warnings, helperFiles: first.helperFiles },
         providerUsed: 'gemini',
         geminiError: null,
       };
     } catch (error) {
       const firstError = error instanceof Error ? error.message : String(error);
-      logger.warn({ err: firstError }, 'compact Gemini generation failed — retrying with the two-call flow');
-      try {
-        // Escalate once to the higher-quality two-call flow before leaving Gemini.
-        // (Only when compact mode was requested; two-call already failed if not.)
-        if (userChoice.compact === false) throw error;
-        const { problem, testCases, helperFiles } = await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel);
-        warnings.push(`Compact generation failed (${firstError}); used the detailed two-call flow instead.`);
-        return {
-          bundle: { problem, testCases, source: 'gemini', warnings, helperFiles },
-          providerUsed: 'gemini',
-          geminiError: null,
-        };
-      } catch (secondError) {
-        geminiError = secondError instanceof Error ? secondError.message : String(secondError);
-        warnings.push(`Gemini generation failed: ${geminiError}`);
-        logger.warn({ err: geminiError }, 'per-user Gemini generation failed — falling back to the server provider');
+      // A quota failure must NOT escalate to the two-call flow — that spends
+      // more tokens right after the budget ran out. Skip straight to fallback.
+      if (isQuotaError(error)) {
+        geminiError = describeGeminiFailure(error);
+        warnings.push(geminiError);
+        logger.warn({ err: geminiError }, 'per-user Gemini quota reached — falling back without escalation');
+      } else {
+        logger.warn({ err: firstError }, 'compact Gemini generation failed — retrying with the two-call flow');
+        try {
+          // Escalate once to the higher-quality two-call flow before leaving Gemini.
+          // (Only when compact mode was requested; two-call already failed if not.)
+          if (userChoice.compact === false) throw error;
+          const escalated = await generateWithGemini(userChoice.geminiKey, options, userChoice.geminiModel);
+          warnings.push(`Compact generation failed (${firstError}); used the detailed two-call flow instead.`, ...escalated.warnings);
+          return {
+            bundle: { problem: escalated.problem, testCases: escalated.testCases, source: 'gemini', warnings, helperFiles: escalated.helperFiles },
+            providerUsed: 'gemini',
+            geminiError: null,
+          };
+        } catch (secondError) {
+          geminiError = describeGeminiFailure(secondError);
+          warnings.push(geminiError);
+          logger.warn({ err: geminiError }, 'per-user Gemini generation failed — falling back to the server provider');
+        }
       }
     }
   } else if (userChoice.aiProvider === 'gemini') {

@@ -1,0 +1,4 @@
+
+# Vendored C toolchain for the browser preview (clang.wasm, wasm-ld.wasm,
+# clang-fs.tar.gz) — derived at build time, never committed. See scripts/.
+/public/toolchain/

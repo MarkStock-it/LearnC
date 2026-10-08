@@ -1,22 +1,47 @@
 import type { GenerateOptions } from './aiService.js';
 import type { GeneratedProblem } from '../domain/problem.js';
 
+/**
+ * The avoid-list rides in every prompt, so it is bounded: the freshest few
+ * titles, each truncated. Without this a long-lived account pays hundreds of
+ * tokens per call for titles it will never repeat.
+ */
+export function formatAvoidTitles(titles: string[] | undefined, maxTitles = 10, maxChars = 60): string {
+  if (!titles || titles.length === 0) return '';
+  return titles
+    .slice(-maxTitles)
+    .map((title) => (title.length > maxChars ? `${title.slice(0, maxChars - 1)}…` : title))
+    .join('; ');
+}
+
 /** Short learner-intent block reused by every provider's prompt. */
 export function learnerIntentBlock(options: GenerateOptions): string {
   const extras: string[] = [];
   if (options.instructions) extras.push(`LEARNER INSTRUCTIONS (honour exactly): ${options.instructions}`);
-  if (options.avoidTitles && options.avoidTitles.length > 0) {
-    extras.push(`Do not repeat or resemble these existing problems: ${options.avoidTitles.join('; ')}.`);
-  }
+  const avoid = formatAvoidTitles(options.avoidTitles);
+  if (avoid) extras.push(`Do not repeat or resemble these existing problems: ${avoid}.`);
   return extras.length > 0 ? '\n\n' + extras.join('\n') : '';
+}
+
+/**
+ * The test-case call needs formats, samples and semantics — not the full
+ * statement prose, which can be the largest input chunk of a generation.
+ */
+export function condenseProblemForTestCases(problem: GeneratedProblem, maxDescriptionChars = 1500): GeneratedProblem {
+  if (problem.description.length <= maxDescriptionChars) return problem;
+  return {
+    ...problem,
+    description: `${problem.description.slice(0, maxDescriptionChars)}\n…(statement trimmed to keep the request small; the formats and samples below are complete)`,
+  };
 }
 
 /** System prompt from plan §4.1, extended with learner intent and avoid-list. */
 export function problemSystemPrompt(options: GenerateOptions): string {
   const extraBlock = learnerIntentBlock(options);
 
-  const avoidBlock = options.avoidTitles?.length
-    ? `\n\nDo not repeat, paraphrase, or closely resemble these existing titles: ${options.avoidTitles.join('; ')}. Choose a meaningfully different algorithm/task and input shape.`
+  const avoidList = formatAvoidTitles(options.avoidTitles);
+  const avoidBlock = avoidList
+    ? `\n\nDo not repeat, paraphrase, or closely resemble these existing titles: ${avoidList}. Choose a meaningfully different algorithm/task and input shape.`
     : '';
   return `You are an expert C programming instructor designing rigorous, unambiguous exam-style C99 problems.
 
