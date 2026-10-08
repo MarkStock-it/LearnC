@@ -1,5 +1,17 @@
 # C Practice pass-by — 2026-09-29
 
+## Deploy 2026-10-08 — Gemini free-tier fit + browser C preview, published
+
+- Shipped commit `cb5b3a2` (pushed to `origin/main`, server checkout fast-forwarded to match). Two features: (1) the AI quiz/test maker now fits the Gemini free tier (~20k tokens/min) via per-key token-bucket pacing (`aiQuota.ts`: prompt+maxTokens reserve, usage reconcile, 429 retry-after, 20s budget wait), compact prompts (≤10 cases, scaled maxTokens, no helper_files), bounded avoid-list, condensed test-case problems, no escalation on quota, per-item failures as `notes` for partial quizzes; (2) client-side Instant Preview — real clang 8 → wasm32-wasi → wasm-ld in a worker (compile-once, run-per-case, watchdogs), toolchain vendored from `@runno/sandbox@0.10.2` via `frontend/scripts/fetch-toolchain.sh`, served from `/toolchain/` (~50MB, gitignored, derived at build time). JSCPP fully removed.
+- **Built from a clean export of `cb5b3a2`** (`git archive HEAD`). Pre-publish on the export: backend `npm ci` / `build` / `test` (83 passed, 1 skipped, 8 files), frontend `fetch-toolchain.sh` / `npm ci` / `typecheck` / `build`, `preview-battery.cjs` 24/24 (local run, pre-commit).
+- Byte-identity verified against production: `index.html` `9ac884c4…` matches; toolchain files SHA-identical live vs export (`clang.wasm` `2a466f0e…` 31MB, `wasm-ld.wasm` `36419ed2…` 19MB, `clang-fs.tar.gz` `7ed12063…` 1.8MB). Backend entry hashes (`app.js` `454b8653…`, `server.js` `37850ba1…`, `migrate.js` `191c23d0…`) unchanged — the backend changes live in service modules (new `dist/services/aiQuota.js`, dist 55→56 js files, no stale modules).
+- Order used: clean export → build → test → tar → `scp` → `live-backup.sh` → `live-publish.sh` → migrate → restart → smoke → toolchain + browser check. Frontend extracted **without** `--delete` (`.htaccess` preserved). New entry assets: `assets/index-DmhrWZ-r.js`, `assets/index--Ui9n793.css`. PM2 `learnc` restarted (restarts 0→1, `unstable restarts` 0), health `ok` (MySQL, inline queue, `unshare` sandbox).
+- Backups: `~/deploy-backups/learnc-20261008-134055/` (db dump 170KB, docroot + backend-dist archives, checkout-at `6b4f7f9`); `~/learnc-app/backend/dist.pre-20261008-133829` is the previous compiled backend. Roll back by restoring those and `pm2 restart learnc`.
+- Migrations: none pending (`database already up to date`, ledger still `001_init`–`004_leaderboard_opt_in`). No rows written; `.env` untouched.
+- Smoke: `scripts/live-smoke.sh` → **PASS=18 FAIL=0**, no 5xx. `/toolchain/*` → 200 with exact byte sizes.
+- Browser spot-check limit: live Chromium on `/problems/1` renders "Problem not found" — the production DB holds **zero problem sets**, so there is no problem to run Instant Preview against. No test data was seeded (prod writes need approval). Preview engine itself is covered by the 24/24 battery on byte-identical files plus the earlier local Chromium pass (malloc/struct/inf-loop/diagnostics/server-grading).
+- Still outstanding: rotate the production DB password in pushed git history (deferred, as before).
+
 ## Deploy 2026-10-07 — the expired-session fix, published
 
 - One user-visible defect fixed on the live site: a fabricated or expired `localStorage` token used to render the *full signed-in shell* with no sign-in prompt and silently empty data. Harmless for data integrity (every write was already 401) but misleading for a student whose session had simply expired.
